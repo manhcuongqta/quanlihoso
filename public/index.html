@@ -1,0 +1,1767 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hệ Thống Quản Lý Hồ Sơ Giáo Viên - Trường Học</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Font Family -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+  </style>
+</head>
+<body class="text-slate-800 antialiased selection:bg-blue-500 selection:text-white">
+
+  <!-- Root App Shell -->
+  <div id="app">
+    <div class="min-h-screen flex items-center justify-center bg-slate-900 text-white">
+      <div class="text-center">
+        <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+        <p class="text-lg font-medium">Đang tải Hệ thống Quản lý Hồ sơ Giáo viên...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inline Application Bundle -->
+  <script>
+    // Application State Store
+    const state = {
+      currentUser: null,
+      usersList: [],
+      categories: [],
+      departments: [],
+      documents: [],
+      schoolYears: ['2026-2027'],
+      teacherFolders: [],
+      activeCategory: 'personal',
+      activeSubDepartment: 'to1',
+      activeTeacherFolderId: null,
+      personalSubmenuOpen: true,
+      searchQuery: '',
+      selectedSchoolYear: '2026-2027',
+      viewMode: 'compact', // 'compact' list or 'grid'
+      driveConfig: {},
+      activeModal: null,
+      previewDoc: null,
+      toast: null,
+      loginError: '',
+      resetUserPassTarget: null
+    };
+
+    function showToast(msg, type = 'success') {
+      state.toast = { msg, type };
+      renderApp();
+      setTimeout(() => {
+        state.toast = null;
+        renderApp();
+      }, 4000);
+    }
+
+    function getRoleText(role) {
+      switch (role) {
+        case 'admin': return 'Quản trị viên (Admin)';
+        case 'bgh': return 'Ban Giám Hiệu (BGH)';
+        case 'totruong': return 'Tổ trưởng Chuyên môn';
+        case 'giaovien': return 'Giáo viên';
+        default: return role;
+      }
+    }
+
+    function getRoleBadgeStyle(role) {
+      switch (role) {
+        case 'admin': return 'bg-purple-100 text-purple-700 border-purple-200';
+        case 'bgh': return 'bg-rose-100 text-rose-700 border-rose-200';
+        case 'totruong': return 'bg-amber-100 text-amber-800 border-amber-200';
+        case 'giaovien': return 'bg-blue-100 text-blue-700 border-blue-200';
+        default: return 'bg-slate-100 text-slate-700';
+      }
+    }
+
+    async function initData() {
+      // Check saved login session in localStorage
+      const savedUserJson = localStorage.getItem('school_user_session');
+      if (savedUserJson) {
+        try {
+          state.currentUser = JSON.parse(savedUserJson);
+        } catch (e) {
+          localStorage.removeItem('school_user_session');
+        }
+      }
+
+      if (!state.currentUser) {
+        renderApp();
+        return;
+      }
+
+      try {
+        const [resCat, resDep, resDrive, resYears, resFolders] = await Promise.all([
+          fetch('/api/categories').then(r => r.json()),
+          fetch('/api/departments').then(r => r.json()),
+          fetch('/api/drive/config').then(r => r.json()),
+          fetch('/api/school-years').then(r => r.json()),
+          fetch('/api/teacher-folders', { headers: { 'x-user-id': state.currentUser.id } }).then(r => r.json())
+        ]);
+
+        if (resCat.success) state.categories = resCat.categories;
+        if (resDep.success) state.departments = resDep.departments;
+        if (resDrive.success) state.driveConfig = resDrive.config;
+        if (resYears.success) {
+          state.schoolYears = resYears.schoolYears;
+          if (!state.schoolYears.includes(state.selectedSchoolYear)) {
+            state.selectedSchoolYear = state.schoolYears[0] || '2026-2027';
+          }
+        }
+        if (resFolders.success) state.teacherFolders = resFolders.teacherFolders;
+        
+        await fetchUsersList();
+        await fetchDocuments();
+      } catch (err) {
+        console.error("Init Error:", err);
+      }
+      renderApp();
+    }
+
+    async function handleLogin(e) {
+      e.preventDefault();
+      const form = e.target;
+      const username = form.username.value.trim();
+      const password = form.password.value;
+
+      state.loginError = '';
+      renderApp();
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (data.success) {
+          state.currentUser = data.user;
+          localStorage.setItem('school_user_session', JSON.stringify(data.user));
+          await initData();
+        } else {
+          state.loginError = data.message || 'Tên đăng nhập hoặc mật khẩu không chính xác';
+          renderApp();
+        }
+      } catch (err) {
+        state.loginError = 'Lỗi kết nối máy chủ';
+        renderApp();
+      }
+    }
+
+    function handleLogout() {
+      localStorage.removeItem('school_user_session');
+      state.currentUser = null;
+      state.documents = [];
+      showToast("Đã đăng xuất khỏi hệ thống", "info");
+      renderApp();
+    }
+
+    async function handleChangePasswordSubmit(e) {
+      e.preventDefault();
+      const form = e.target;
+      const oldPassword = form.oldPassword.value;
+      const newPassword = form.newPassword.value;
+      const confirmPassword = form.confirmPassword.value;
+
+      if (newPassword !== confirmPassword) {
+        showToast("Mật khẩu mới và xác nhận mật khẩu không khớp!", "error");
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/auth/change-password', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': state.currentUser.id
+          },
+          body: JSON.stringify({ oldPassword, newPassword })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(data.message);
+          state.activeModal = null;
+          renderApp();
+        } else {
+          showToast(data.message, "error");
+        }
+      } catch (err) {
+        showToast("Lỗi khi đổi mật khẩu", "error");
+      }
+    }
+
+    async function handleAdminResetPassSubmit(e) {
+      e.preventDefault();
+      const form = e.target;
+      const newPassword = form.newPassword.value;
+      if (!state.resetUserPassTarget || !newPassword) return;
+
+      try {
+        const res = await fetch(`/api/users/${state.resetUserPassTarget.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': state.currentUser.id
+          },
+          body: JSON.stringify({ password: newPassword })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`Đã đặt lại mật khẩu cho giáo viên ${state.resetUserPassTarget.fullName} thành công!`);
+          state.activeModal = 'user_list';
+          state.resetUserPassTarget = null;
+          await fetchUsersList();
+          renderApp();
+        } else {
+          showToast(data.message, "error");
+        }
+      } catch (err) {
+        showToast("Lỗi đổi mật khẩu giáo viên", "error");
+      }
+    }
+
+    async function fetchUsersList() {
+      if (!state.currentUser) return;
+      try {
+        const res = await fetch('/api/users', {
+          headers: { 'x-user-id': state.currentUser.id }
+        });
+        const data = await res.json();
+        if (data.success) state.usersList = data.users;
+      } catch (err) {}
+    }
+
+    async function fetchTeacherFolders() {
+      try {
+        let url = `/api/teacher-folders`;
+        if (state.activeCategory === 'personal' && state.activeSubDepartment) {
+          url += `?departmentId=${state.activeSubDepartment}`;
+        }
+        const res = await fetch(url, { headers: { 'x-user-id': state.currentUser.id } });
+        const data = await res.json();
+        if (data.success) state.teacherFolders = data.teacherFolders;
+      } catch (err) {}
+    }
+
+    async function fetchDocuments() {
+      if (!state.currentUser) return;
+      try {
+        let url = `/api/documents?categoryId=${state.activeCategory}&schoolYear=${state.selectedSchoolYear}`;
+        if (state.activeCategory === 'personal' && state.activeSubDepartment) {
+          url += `&departmentId=${state.activeSubDepartment}`;
+        }
+        if (state.activeTeacherFolderId) {
+          url += `&teacherFolderId=${state.activeTeacherFolderId}`;
+        }
+        if (state.searchQuery) {
+          url += `&search=${encodeURIComponent(state.searchQuery)}`;
+        }
+
+        const res = await fetch(url, {
+          headers: { 'x-user-id': state.currentUser.id }
+        });
+        const data = await res.json();
+        if (data.success) {
+          state.documents = data.documents;
+        }
+      } catch (err) {}
+    }
+
+    async function switchUser(userId) {
+      const found = state.usersList.find(u => u.id === userId);
+      if (found) {
+        state.currentUser = found;
+        localStorage.setItem('school_user_session', JSON.stringify(found));
+        showToast(`Đã chuyển sang tài khoản: ${found.fullName} (${getRoleText(found.role)})`, 'info');
+        await fetchTeacherFolders();
+        await fetchDocuments();
+        renderApp();
+      }
+    }
+
+    async function deleteDocument(docId) {
+      if (!confirm("Bạn có chắc chắn muốn xóa hồ sơ này khỏi hệ thống?")) return;
+      try {
+        const res = await fetch(`/api/documents/${docId}`, {
+          method: 'DELETE',
+          headers: { 'x-user-id': state.currentUser.id }
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast("Đã xóa hồ sơ thành công");
+          await fetchDocuments();
+          renderApp();
+        } else {
+          showToast(data.message, "error");
+        }
+      } catch (err) {
+        showToast("Lỗi khi xóa", "error");
+      }
+    }
+
+    async function deleteUser(userId) {
+      if (!confirm("Bạn có chắc chắn muốn xóa tài khoản này khỏi hệ thống?")) return;
+      try {
+        const res = await fetch(`/api/users/${userId}`, {
+          method: 'DELETE',
+          headers: { 'x-user-id': state.currentUser.id }
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(data.message);
+          await fetchUsersList();
+          renderApp();
+        } else {
+          showToast(data.message, "error");
+        }
+      } catch (err) {
+        showToast("Lỗi khi xóa tài khoản", "error");
+      }
+    }
+
+    async function deleteTeacherFolder(folderId) {
+      if (!confirm("Bạn có chắc chắn muốn xóa thư mục thành viên này?")) return;
+      try {
+        const res = await fetch(`/api/teacher-folders/${folderId}`, {
+          method: 'DELETE',
+          headers: { 'x-user-id': state.currentUser.id }
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(data.message);
+          if (state.activeTeacherFolderId === folderId) {
+            state.activeTeacherFolderId = null;
+          }
+          await fetchTeacherFolders();
+          await fetchDocuments();
+          renderApp();
+        } else {
+          showToast(data.message, "error");
+        }
+      } catch (err) {
+        showToast("Lỗi khi xóa thư mục", "error");
+      }
+    }
+
+    async function deleteSchoolYear(year) {
+      if (!confirm(`Bạn có chắc chắn muốn xóa năm học ${year}?`)) return;
+      try {
+        const res = await fetch(`/api/school-years/${encodeURIComponent(year)}`, {
+          method: 'DELETE',
+          headers: { 'x-user-id': state.currentUser.id }
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(data.message);
+          state.schoolYears = data.schoolYears;
+          if (state.selectedSchoolYear === year) {
+            state.selectedSchoolYear = state.schoolYears[0] || '2026-2027';
+          }
+          await fetchDocuments();
+          renderApp();
+        } else {
+          showToast(data.message, "error");
+        }
+      } catch (err) {
+        showToast("Lỗi khi xóa năm học", "error");
+      }
+    }
+
+    async function handleUploadSubmit(e) {
+      e.preventDefault();
+      const form = e.target;
+      const formData = new FormData(form);
+
+      formData.append('categoryId', state.activeCategory);
+      formData.append('departmentId', state.activeCategory === 'personal' ? state.activeSubDepartment : (state.currentUser.departmentId || 'to1'));
+
+      try {
+        const res = await fetch('/api/documents', {
+          method: 'POST',
+          headers: { 'x-user-id': state.currentUser.id },
+          body: formData
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast("Tải hồ sơ lên Google Drive và lưu vào thư mục thành công!");
+          state.activeModal = null;
+          await fetchDocuments();
+          renderApp();
+        } else {
+          showToast(data.message, "error");
+        }
+      } catch (err) {
+        showToast("Lỗi gửi dữ liệu", "error");
+      }
+    }
+
+    async function handleUserSubmit(e) {
+      e.preventDefault();
+      const form = e.target;
+      const body = {
+        username: form.username.value,
+        password: form.password.value,
+        fullName: form.fullName.value,
+        role: form.role.value,
+        departmentId: form.departmentId.value,
+        email: form.email.value,
+        driveFolderUrl: form.driveFolderUrl ? form.driveFolderUrl.value : ''
+      };
+
+      try {
+        const res = await fetch('/api/users', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': state.currentUser.id
+          },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(data.message);
+          state.activeModal = null;
+          await fetchUsersList();
+          renderApp();
+        } else {
+          showToast(data.message, "error");
+        }
+      } catch (err) {
+        showToast("Lỗi tạo tài khoản", "error");
+      }
+    }
+
+    async function handleSchoolYearSubmit(e) {
+      e.preventDefault();
+      const form = e.target;
+      const year = form.schoolYearInput.value;
+
+      try {
+        const res = await fetch('/api/school-years', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': state.currentUser.id
+          },
+          body: JSON.stringify({ year })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(data.message);
+          state.schoolYears = data.schoolYears;
+          state.selectedSchoolYear = year.trim();
+          state.activeModal = null;
+          await fetchDocuments();
+          renderApp();
+        } else {
+          showToast(data.message, "error");
+        }
+      } catch (err) {
+        showToast("Lỗi thêm năm học", "error");
+      }
+    }
+
+    async function handleTeacherFolderSubmit(e) {
+      e.preventDefault();
+      const form = e.target;
+      const body = {
+        name: form.name.value,
+        teacherId: form.teacherId.value,
+        departmentId: state.activeCategory === 'personal' ? state.activeSubDepartment : (state.currentUser.departmentId || 'to1'),
+        driveFolderUrl: form.driveFolderUrl.value
+      };
+
+      try {
+        const res = await fetch('/api/teacher-folders', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': state.currentUser.id
+          },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(data.message);
+          state.activeModal = null;
+          await fetchTeacherFolders();
+          renderApp();
+        } else {
+          showToast(data.message, "error");
+        }
+      } catch (err) {
+        showToast("Lỗi tạo thư mục", "error");
+      }
+    }
+
+    async function handleCategorySubmit(e) {
+      e.preventDefault();
+      const form = e.target;
+      const body = {
+        name: form.name.value,
+        description: form.description.value,
+        icon: 'FolderPlus'
+      };
+
+      try {
+        const res = await fetch('/api/categories', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': state.currentUser.id
+          },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(data.message);
+          state.activeModal = null;
+          await initData();
+        } else {
+          showToast(data.message, "error");
+        }
+      } catch (err) {
+        showToast("Lỗi tạo danh mục", "error");
+      }
+    }
+
+    async function handleDriveSubmit(e) {
+      e.preventDefault();
+      const form = e.target;
+      const body = {
+        folderId: form.folderId.value,
+        serviceAccountEmail: form.serviceAccountEmail.value,
+        syncMode: form.syncMode.value,
+        gasDeploymentUrl: form.gasDeploymentUrl ? form.gasDeploymentUrl.value : ''
+      };
+
+      try {
+        const res = await fetch('/api/drive/config', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': state.currentUser.id
+          },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(data.message);
+          state.driveConfig = data.config;
+          state.activeModal = null;
+          renderApp();
+        } else {
+          showToast(data.message, "error");
+        }
+      } catch (err) {
+        showToast("Lỗi lưu cấu hình Google Drive", "error");
+      }
+    }
+
+    // LOGIN PAGE (Clean & Standard without demo accounts)
+    function renderLoginPage() {
+      const root = document.getElementById('app');
+      root.innerHTML = `
+        <div class="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+          <div class="max-w-md w-full bg-white rounded-3xl p-8 shadow-2xl border border-slate-100">
+            
+            <div class="text-center mb-8">
+              <div class="w-16 h-16 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold text-3xl mx-auto mb-3 shadow-lg shadow-blue-500/30">
+                <i data-lucide="graduation-cap" class="w-10 h-10"></i>
+              </div>
+              <h2 class="text-2xl font-extrabold text-slate-900 leading-tight">QUẢN LÝ HỒ SƠ GIÁO VIÊN</h2>
+              <p class="text-xs text-slate-500 mt-1 font-medium">Hệ Thống Lưu Trữ Hồ Sơ Điện Tử • Trường Học</p>
+            </div>
+
+            ${state.loginError ? `
+              <div class="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-semibold flex items-center gap-2">
+                <i data-lucide="alert-circle" class="w-4 h-4 flex-shrink-0"></i>
+                <span>${state.loginError}</span>
+              </div>
+            ` : ''}
+
+            <form onsubmit="handleLogin(event)" class="space-y-4">
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1.5">Tên đăng nhập</label>
+                <div class="relative">
+                  <i data-lucide="user" class="w-4 h-4 absolute left-3.5 top-3.5 text-slate-400"></i>
+                  <input
+                    type="text"
+                    name="username"
+                    required
+                    placeholder="Nhập tên đăng nhập giáo viên"
+                    class="w-full text-sm pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1.5">Mật khẩu</label>
+                <div class="relative">
+                  <i data-lucide="lock" class="w-4 h-4 absolute left-3.5 top-3.5 text-slate-400"></i>
+                  <input
+                    type="password"
+                    name="password"
+                    required
+                    placeholder="Nhập mật khẩu"
+                    class="w-full text-sm pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-600/30 transition transform active:scale-98 flex items-center justify-center gap-2 mt-2"
+              >
+                <i data-lucide="log-in" class="w-4 h-4"></i>
+                <span>Đăng Nhập Vào Hệ Thống</span>
+              </button>
+            </form>
+
+          </div>
+        </div>
+      `;
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    function renderApp() {
+      if (!state.currentUser) {
+        renderLoginPage();
+        return;
+      }
+
+      const root = document.getElementById('app');
+      const activeCatObj = state.categories.find(c => c.id === state.activeCategory) || { name: 'Hồ sơ', description: '' };
+      const activeDeptObj = state.departments.find(d => d.id === state.activeSubDepartment) || { name: state.activeSubDepartment };
+
+      // Current department member folders
+      let currentDeptFolders = state.teacherFolders.filter(f => f.departmentId === (state.activeCategory === 'personal' ? state.activeSubDepartment : (state.currentUser.departmentId || 'to1')));
+      if (state.currentUser.role === 'giaovien') {
+        currentDeptFolders = currentDeptFolders.filter(f => f.teacherId === state.currentUser.id);
+      }
+
+      root.innerHTML = `
+        <div class="min-h-screen flex flex-col bg-slate-100">
+          
+          ${state.toast ? `
+            <div class="fixed top-4 right-4 z-50 px-5 py-3 rounded-lg shadow-xl text-white font-medium flex items-center gap-3 ${
+              state.toast.type === 'error' ? 'bg-rose-600' : state.toast.type === 'info' ? 'bg-blue-600' : 'bg-emerald-600'
+            }">
+              <i data-lucide="${state.toast.type === 'error' ? 'alert-triangle' : 'check-circle'}" class="w-5 h-5"></i>
+              <span>${state.toast.msg}</span>
+            </div>
+          ` : ''}
+
+          <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div class="flex items-center justify-between h-16">
+                
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xl shadow-md shadow-blue-500/20">
+                    <i data-lucide="graduation-cap" class="w-6 h-6"></i>
+                  </div>
+                  <div>
+                    <h1 class="text-lg font-bold text-slate-900 leading-tight">QUẢN LÝ HỒ SƠ GIÁO VIÊN</h1>
+                    <p class="text-xs text-slate-500 font-medium">Trường Học Thông Minh • Tích hợp Google Drive</p>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-4">
+                  
+                  ${state.usersList.length > 0 ? `
+                    <div class="hidden md:flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+                      <span class="text-xs font-semibold text-slate-500 px-2 flex items-center gap-1">
+                        <i data-lucide="users" class="w-3.5 h-3.5"></i> Chuyển tài khoản:
+                      </span>
+                      <select id="userSwitcherSelect" class="bg-white text-xs font-medium text-slate-700 py-1 px-2.5 rounded-lg border border-slate-300 focus:outline-none cursor-pointer">
+                        ${state.usersList.map(u => `
+                          <option value="${u.id}" ${u.id === state.currentUser.id ? 'selected' : ''}>
+                            ${u.fullName} (${getRoleText(u.role)})
+                          </option>
+                        `).join('')}
+                      </select>
+                    </div>
+                  ` : ''}
+
+                  <div class="flex items-center gap-3 border-l border-slate-200 pl-4">
+                    <img src="${state.currentUser.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${state.currentUser.username}`}" class="w-9 h-9 rounded-full bg-slate-200 object-cover ring-2 ring-blue-500/20" />
+                    <div class="hidden sm:block text-left">
+                      <div class="text-sm font-semibold text-slate-800 leading-none mb-1">${state.currentUser.fullName}</div>
+                      <span class="inline-block px-2 py-0.5 text-[10px] font-bold rounded-full border ${getRoleBadgeStyle(state.currentUser.role)}">
+                        ${getRoleText(state.currentUser.role)}
+                      </span>
+                    </div>
+
+                    <!-- CHANGE PASSWORD BUTTON -->
+                    <button onclick="openModal('change_password')" class="ml-1 p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition flex items-center gap-1.5 text-xs font-semibold" title="Đổi mật khẩu tài khoản">
+                      <i data-lucide="key-round" class="w-4 h-4"></i>
+                      <span class="hidden md:inline">Đổi mật khẩu</span>
+                    </button>
+
+                    <!-- LOGOUT BUTTON -->
+                    <button onclick="handleLogout()" class="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition" title="Đăng xuất khỏi hệ thống">
+                      <i data-lucide="log-out" class="w-5 h-5"></i>
+                    </button>
+                  </div>
+
+                </div>
+
+              </div>
+            </div>
+          </header>
+
+          <div class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex gap-6">
+            
+            <aside class="w-64 flex-shrink-0">
+              <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 sticky top-22">
+                
+                <div class="flex items-center justify-between px-2 mb-3">
+                  <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Danh Mục Hồ Sơ</span>
+                  ${state.currentUser.role === 'admin' ? `
+                    <button onclick="openModal('category')" class="text-xs text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1 bg-blue-50 px-2 py-1 rounded-md hover:bg-blue-100 transition">
+                      <i data-lucide="plus" class="w-3.5 h-3.5"></i> Thêm
+                    </button>
+                  ` : ''}
+                </div>
+
+                <nav class="space-y-1">
+                  
+                  <button onclick="setCategory('school')" class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-medium text-sm transition-all ${
+                    state.activeCategory === 'school' ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'text-slate-700 hover:bg-slate-100'
+                  }">
+                    <div class="flex items-center gap-2.5">
+                      <i data-lucide="building-2" class="w-4 h-4"></i>
+                      <span>Hồ sơ nhà trường</span>
+                    </div>
+                  </button>
+
+                  <button onclick="setCategory('group')" class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-medium text-sm transition-all ${
+                    state.activeCategory === 'group' ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'text-slate-700 hover:bg-slate-100'
+                  }">
+                    <div class="flex items-center gap-2.5">
+                      <i data-lucide="users" class="w-4 h-4"></i>
+                      <span>Hồ sơ tổ</span>
+                    </div>
+                  </button>
+
+                  <div>
+                    <button onclick="togglePersonalSubmenu()" class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-medium text-sm transition-all ${
+                      state.activeCategory === 'personal' ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'text-slate-700 hover:bg-slate-100'
+                    }">
+                      <div class="flex items-center gap-2.5">
+                        <i data-lucide="folder-user" class="w-4 h-4"></i>
+                        <span>Hồ sơ cá nhân</span>
+                      </div>
+                      <i data-lucide="${state.personalSubmenuOpen ? 'chevron-down' : 'chevron-right'}" class="w-4 h-4 opacity-75"></i>
+                    </button>
+
+                    ${state.personalSubmenuOpen ? `
+                      <div class="mt-1 ml-4 pl-3 border-l-2 border-slate-200 space-y-1">
+                        ${state.departments.map(dept => `
+                          <button onclick="setSubDepartment('${dept.id}')" class="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                            state.activeCategory === 'personal' && state.activeSubDepartment === dept.id
+                              ? 'bg-blue-50 text-blue-700 font-bold border border-blue-200'
+                              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                          }">
+                            <span>${dept.name}</span>
+                            ${state.currentUser.departmentId === dept.id ? `<span class="w-2 h-2 rounded-full bg-emerald-500"></span>` : ''}
+                          </button>
+                        `).join('')}
+                      </div>
+                    ` : ''}
+                  </div>
+
+                  <button onclick="setCategory('doi')" class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-medium text-sm transition-all ${
+                    state.activeCategory === 'doi' ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'text-slate-700 hover:bg-slate-100'
+                  }">
+                    <div class="flex items-center gap-2.5">
+                      <i data-lucide="flag" class="w-4 h-4"></i>
+                      <span>Hồ sơ đội</span>
+                    </div>
+                  </button>
+
+                  <button onclick="setCategory('doan')" class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-medium text-sm transition-all ${
+                    state.activeCategory === 'doan' ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'text-slate-700 hover:bg-slate-100'
+                  }">
+                    <div class="flex items-center gap-2.5">
+                      <i data-lucide="award" class="w-4 h-4"></i>
+                      <span>Hồ sơ đoàn</span>
+                    </div>
+                  </button>
+
+                  ${state.categories.filter(c => c.isCustom).map(cat => `
+                    <button onclick="setCategory('${cat.id}')" class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-medium text-sm transition-all ${
+                      state.activeCategory === cat.id ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'text-slate-700 hover:bg-slate-100'
+                    }">
+                      <div class="flex items-center gap-2.5">
+                        <i data-lucide="folder-plus" class="w-4 h-4"></i>
+                        <span>${cat.name}</span>
+                      </div>
+                      <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold">Mới</span>
+                    </button>
+                  `).join('')}
+
+                </nav>
+
+                ${state.currentUser.role === 'admin' ? `
+                  <div class="mt-6 pt-4 border-t border-slate-200 space-y-2">
+                    <span class="text-[11px] font-bold uppercase tracking-wider text-purple-600 px-2 block">Công cụ Quản trị (Admin)</span>
+                    
+                    <button onclick="openModal('user_list')" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-purple-800 bg-purple-100 hover:bg-purple-200 border border-purple-300 transition">
+                      <i data-lucide="users" class="w-4 h-4"></i>
+                      <span>Danh sách Tài khoản</span>
+                    </button>
+
+                    <button onclick="openModal('user')" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition">
+                      <i data-lucide="user-plus" class="w-4 h-4"></i>
+                      <span>Tạo tài khoản Giáo viên</span>
+                    </button>
+
+                    <button onclick="openModal('school_year')" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition">
+                      <i data-lucide="calendar-plus" class="w-4 h-4"></i>
+                      <span>Quản lý Năm học</span>
+                    </button>
+
+                    <button onclick="openModal('category')" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition">
+                      <i data-lucide="folder-plus" class="w-4 h-4"></i>
+                      <span>Tự tạo Mục Hồ sơ mới</span>
+                    </button>
+
+                    <button onclick="openModal('drive')" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition">
+                      <i data-lucide="cloud-cog" class="w-4 h-4"></i>
+                      <span>Cấu hình Google Drive</span>
+                    </button>
+                  </div>
+                ` : ''}
+
+                <div class="mt-6 p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600">
+                  <div class="flex items-center gap-2 font-semibold text-slate-800 mb-1">
+                    <i data-lucide="hard-drive" class="w-4 h-4 text-emerald-600"></i>
+                    <span>Trạng thái Google Drive</span>
+                  </div>
+                  <p class="text-[11px] text-slate-500 mb-2">Thư mục chung: <span class="font-mono text-slate-700 font-medium">/${state.driveConfig.folderId || 'SCHOOL_FOLDER'}</span></p>
+                  <div class="flex items-center gap-1.5 text-[10px] text-emerald-700 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>Kết nối Drive tự động hoạt động</span>
+                  </div>
+                </div>
+
+              </div>
+            </aside>
+
+            <main class="flex-1 flex flex-col gap-5">
+              
+              <!-- Header Bar -->
+              <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div>
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="text-xs font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                      ${state.activeCategory === 'personal' ? `Hồ sơ cá nhân • ${activeDeptObj.name}` : activeCatObj.name}
+                    </span>
+                    <span class="text-xs font-medium text-slate-400">• Năm học ${state.selectedSchoolYear}</span>
+                  </div>
+                  <h2 class="text-2xl font-extrabold text-slate-900">
+                    ${state.activeCategory === 'personal' ? `Danh Sách Hồ Sơ ${activeDeptObj.name}` : activeCatObj.name}
+                  </h2>
+                  <p class="text-sm text-slate-500 mt-1">
+                    ${activeCatObj.description || 'Quản lý, duyệt và xem trực tuyến các tài liệu hồ sơ chuyên môn của giáo viên trên Google Drive.'}
+                  </p>
+                </div>
+
+                <div class="flex items-center gap-2 flex-shrink-0">
+                  <button onclick="openModal('upload')" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2.5 rounded-xl shadow-lg shadow-blue-600/30 flex items-center gap-2 transition-all text-sm">
+                    <i data-lucide="cloud-upload" class="w-5 h-5"></i>
+                    <span>Gửi hồ sơ lên Drive</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Permission Role Banner -->
+              <div class="p-4 rounded-xl border flex items-start gap-3 text-sm ${
+                state.currentUser.role === 'giaovien'
+                  ? 'bg-amber-50 border-amber-200 text-amber-900'
+                  : state.currentUser.role === 'totruong'
+                  ? 'bg-blue-50 border-blue-200 text-blue-900'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              }">
+                <i data-lucide="${state.currentUser.role === 'giaovien' ? 'shield-alert' : 'shield-check'}" class="w-5 h-5 flex-shrink-0 mt-0.5"></i>
+                <div>
+                  <span class="font-bold">Quyền hạn truy cập (${getRoleText(state.currentUser.role)}): </span>
+                  ${state.currentUser.role === 'giaovien' ? `
+                    <span>Bảo mật cá nhân: Bạn <b>chỉ xem được các hồ sơ do chính mình gửi lên</b>. Hồ sơ của các giáo viên khác trong tổ được ẩn hoàn toàn để đảm bảo tính riêng tư.</span>
+                  ` : state.currentUser.role === 'totruong' ? `
+                    <span>Bạn đang mở quyền Tổ trưởng: Có thể <b>xem tất cả hồ sơ của các giáo viên thuộc Tổ chuyên môn</b> mà bạn quản lý.</span>
+                  ` : `
+                    <span>Quyền giám sát toàn trường: Bạn có quyền <b>xem, duyệt và quản lý toàn bộ hồ sơ</b> của tất cả giáo viên trong trường học.</span>
+                  `}
+                </div>
+              </div>
+
+              <!-- MEMBER FOLDERS IN DEPARTMENT -->
+              ${(state.activeCategory === 'personal' || state.activeCategory === 'group') ? `
+                <div class="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs">
+                  <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                      <i data-lucide="folder" class="w-5 h-5 text-amber-500"></i>
+                      <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wide">Thư Mục Thành Viên Trong ${activeDeptObj.name}</h3>
+                      <span class="text-xs text-slate-400 font-mono">(${currentDeptFolders.length} thư mục)</span>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                      ${state.activeTeacherFolderId ? `
+                        <button onclick="clearTeacherFolderFilter()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1">
+                          <i data-lucide="x" class="w-3.5 h-3.5"></i> Xem tất cả
+                        </button>
+                      ` : ''}
+
+                      ${['admin', 'totruong'].includes(state.currentUser.role) ? `
+                        <button onclick="openModal('teacher_folder')" class="text-xs bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold px-3 py-1.5 rounded-lg border border-amber-200 flex items-center gap-1.5 transition">
+                          <i data-lucide="folder-plus" class="w-4 h-4"></i>
+                          <span>+ Tạo thư mục thành viên mới</span>
+                        </button>
+                      ` : ''}
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    ${currentDeptFolders.length === 0 ? `
+                      <div class="col-span-full py-4 text-center text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                        Chưa có thư mục riêng nào được tạo cho các thành viên trong ${activeDeptObj.name}.
+                      </div>
+                    ` : currentDeptFolders.map(folder => {
+                      const isSelected = state.activeTeacherFolderId === folder.id;
+                      return `
+                        <div onclick="selectTeacherFolder('${folder.id}')" class="group cursor-pointer p-3 rounded-xl border transition-all flex flex-col justify-between ${
+                          isSelected
+                            ? 'bg-amber-50 border-amber-400 shadow-md ring-2 ring-amber-400/20'
+                            : 'bg-slate-50 hover:bg-white hover:border-amber-300 border-slate-200/90 shadow-2xs'
+                        }">
+                          <div class="flex items-start justify-between gap-2">
+                            <div class="flex items-center gap-2 min-w-0">
+                              <i data-lucide="folder" class="w-6 h-6 ${isSelected ? 'text-amber-600' : 'text-amber-500'} flex-shrink-0"></i>
+                              <span class="text-xs font-bold text-slate-800 truncate leading-tight">${folder.name}</span>
+                            </div>
+                            ${['admin', 'totruong'].includes(state.currentUser.role) ? `
+                              <button onclick="event.stopPropagation(); deleteTeacherFolder('${folder.id}')" class="text-slate-300 hover:text-rose-600 p-0.5 rounded opacity-0 group-hover:opacity-100 transition" title="Xóa thư mục">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                              </button>
+                            ` : ''}
+                          </div>
+                          
+                          <div class="mt-2.5 pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px] text-slate-500">
+                            <span class="truncate font-medium">${folder.teacherName}</span>
+                            ${folder.driveFolderUrl ? `
+                              <a href="${folder.driveFolderUrl}" target="_blank" onclick="event.stopPropagation()" class="text-blue-600 hover:underline flex items-center gap-0.5 font-bold" title="Mở thư mục trên Google Drive">
+                                <i data-lucide="external-link" class="w-3 h-3"></i> Drive
+                              </a>
+                            ` : ''}
+                          </div>
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                </div>
+              ` : ''}
+
+              <!-- Filter Bar & View Toggle -->
+              <div class="bg-white rounded-xl border border-slate-200/80 p-3 shadow-xs flex flex-wrap items-center justify-between gap-3">
+                <div class="relative flex-1 min-w-[240px]">
+                  <i data-lucide="search" class="w-4 h-4 absolute left-3 top-3 text-slate-400"></i>
+                  <input
+                    type="text"
+                    placeholder="Tìm kiếm tiêu đề hồ sơ, giáo viên, tên tệp..."
+                    value="${state.searchQuery}"
+                    oninput="onSearchChange(event)"
+                    class="w-full bg-slate-50 text-sm pl-9 pr-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                  />
+                </div>
+                
+                <div class="flex items-center gap-3">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-semibold text-slate-500">Năm học:</span>
+                    <select onchange="onYearChange(event)" class="bg-slate-50 text-xs font-semibold text-slate-700 py-2 px-3 rounded-lg border border-slate-200 focus:outline-none cursor-pointer">
+                      ${state.schoolYears.map(yr => `
+                        <option value="${yr}" ${state.selectedSchoolYear === yr ? 'selected' : ''}>${yr}</option>
+                      `).join('')}
+                    </select>
+                  </div>
+
+                  <!-- View Mode Toggle -->
+                  <div class="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
+                    <button onclick="setViewMode('compact')" class="p-1 rounded-md text-xs font-medium flex items-center gap-1 transition ${state.viewMode === 'compact' ? 'bg-white text-blue-600 shadow-2xs font-bold' : 'text-slate-500 hover:text-slate-800'}" title="Danh sách thu gọn">
+                      <i data-lucide="list" class="w-4 h-4"></i>
+                      <span class="hidden sm:inline">Thu gọn</span>
+                    </button>
+                    <button onclick="setViewMode('grid')" class="p-1 rounded-md text-xs font-medium flex items-center gap-1 transition ${state.viewMode === 'grid' ? 'bg-white text-blue-600 shadow-2xs font-bold' : 'text-slate-500 hover:text-slate-800'}" title="Lưới thẻ">
+                      <i data-lucide="layout-grid" class="w-4 h-4"></i>
+                      <span class="hidden sm:inline">Lưới</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Documents List / Grid Display -->
+              ${state.documents.length === 0 ? `
+                <div class="bg-white rounded-2xl border border-slate-200 p-12 text-center">
+                  <div class="w-16 h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i data-lucide="folder-open" class="w-8 h-8"></i>
+                  </div>
+                  <h3 class="text-lg font-bold text-slate-800 mb-1">Chưa có hồ sơ nào trong mục này</h3>
+                  <p class="text-sm text-slate-500 max-w-md mx-auto mb-6">
+                    ${state.currentUser.role === 'giaovien'
+                      ? 'Bạn chưa gửi hồ sơ nào cho danh mục này. Hãy bấm nút gửi hồ sơ để nộp giáo án/tài liệu.'
+                      : 'Chưa có dữ liệu hồ sơ nào được gửi lên cho danh mục và tổ chuyên môn này.'}
+                  </p>
+                  <button onclick="openModal('upload')" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-xl inline-flex items-center gap-2 shadow-md">
+                    <i data-lucide="upload" class="w-4 h-4"></i>
+                    <span>Gửi hồ sơ ngay</span>
+                  </button>
+                </div>
+              ` : state.viewMode === 'compact' ? `
+                <!-- COMPACT LIST VIEW -->
+                <div class="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden divide-y divide-slate-100">
+                  ${state.documents.map(doc => {
+                    const canDelete = doc.teacherId === state.currentUser.id || ['admin', 'bgh'].includes(state.currentUser.role);
+                    return `
+                      <div class="p-3 sm:px-4 hover:bg-slate-50/80 transition-colors flex items-center justify-between gap-3 group">
+                        
+                        <div class="flex items-center gap-3 min-w-0 flex-1">
+                          <div class="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center font-bold flex-shrink-0">
+                            <i data-lucide="file-text" class="w-4 h-4"></i>
+                          </div>
+                          
+                          <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2">
+                              <h4 class="text-sm font-bold text-slate-900 truncate group-hover:text-blue-600 transition-colors">
+                                ${doc.title}
+                              </h4>
+                              <span class="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 flex-shrink-0">
+                                ${state.departments.find(d => d.id === doc.departmentId)?.name || doc.departmentId}
+                              </span>
+                              <span class="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded flex-shrink-0">
+                                ${doc.schoolYear}
+                              </span>
+                            </div>
+
+                            <div class="flex items-center gap-3 text-xs text-slate-400 mt-0.5">
+                              <span class="font-medium text-slate-600 truncate">Giáo viên: ${doc.teacherName}</span>
+                              <span>•</span>
+                              <span class="truncate font-mono">${doc.fileName} (${doc.fileSize})</span>
+                              <span>•</span>
+                              <span>${new Date(doc.uploadedAt).toLocaleDateString('vi-VN')}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="flex items-center gap-1.5 flex-shrink-0">
+                          <button onclick="openPreview('${doc.id}')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1" title="Xem trực tiếp trong web">
+                            <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                            <span class="hidden md:inline">Xem</span>
+                          </button>
+                          <a href="${doc.driveViewUrl}" target="_blank" class="bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1 border border-blue-200" title="Mở thư mục trên Google Drive">
+                            <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                            <span class="hidden md:inline">Drive</span>
+                          </a>
+                          ${canDelete ? `
+                            <button onclick="deleteDocument('${doc.id}')" class="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50" title="Xóa hồ sơ">
+                              <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                          ` : ''}
+                        </div>
+
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              ` : `
+                <!-- GRID CARD VIEW -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  ${state.documents.map(doc => {
+                    const canDelete = doc.teacherId === state.currentUser.id || ['admin', 'bgh'].includes(state.currentUser.role);
+                    return `
+                      <div class="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-5 flex flex-col justify-between gap-4 group">
+                        <div>
+                          <div class="flex items-center justify-between gap-2 mb-2">
+                            <span class="text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-md border border-blue-200">
+                              ${state.departments.find(d => d.id === doc.departmentId)?.name || doc.departmentId}
+                            </span>
+                            <div class="flex items-center gap-2">
+                              <span class="text-xs text-slate-400 flex items-center gap-1">
+                                <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
+                                ${new Date(doc.uploadedAt).toLocaleDateString('vi-VN')}
+                              </span>
+                              ${canDelete ? `
+                                <button onclick="deleteDocument('${doc.id}')" class="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50" title="Xóa hồ sơ">
+                                  <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
+                              ` : ''}
+                            </div>
+                          </div>
+
+                          <h4 class="text-base font-bold text-slate-900 group-hover:text-blue-600 transition-colors leading-snug mb-2">
+                            ${doc.title}
+                          </h4>
+
+                          ${doc.notes ? `<p class="text-xs text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-100 mb-3 italic">"${doc.notes}"</p>` : ''}
+
+                          <div class="flex items-center gap-3 p-2.5 bg-slate-50 rounded-xl border border-slate-200/70">
+                            <div class="w-9 h-9 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center font-bold flex-shrink-0">
+                              <i data-lucide="file-text" class="w-5 h-5"></i>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                              <p class="text-xs font-semibold text-slate-800 truncate">${doc.fileName}</p>
+                              <p class="text-[11px] text-slate-400 font-mono">${doc.fileSize} • Google Drive Storage</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                          <div class="flex items-center gap-2">
+                            <div class="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
+                              ${doc.teacherName ? doc.teacherName.charAt(0) : 'G'}
+                            </div>
+                            <div>
+                              <p class="text-xs font-semibold text-slate-700 leading-none">${doc.teacherName}</p>
+                              <p class="text-[10px] text-slate-400">Giáo viên gửi</p>
+                            </div>
+                          </div>
+
+                          <div class="flex items-center gap-2">
+                            <button onclick="openPreview('${doc.id}')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                              <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                              <span>Xem trước</span>
+                            </button>
+                            <a href="${doc.driveViewUrl}" target="_blank" class="bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 border border-blue-200">
+                              <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                              <span>Mở Drive</span>
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              `}
+
+            </main>
+          </div>
+
+          ${renderModals()}
+
+        </div>
+      `;
+
+      if (window.lucide) window.lucide.createIcons();
+
+      const switcher = document.getElementById('userSwitcherSelect');
+      if (switcher) {
+        switcher.addEventListener('change', (e) => switchUser(e.target.value));
+      }
+    }
+
+    function renderModals() {
+      if (!state.activeModal) return '';
+
+      // CHANGE PASSWORD MODAL
+      if (state.activeModal === 'change_password') {
+        return `
+          <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+              <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                <div>
+                  <h3 class="text-lg font-bold text-slate-900">Đổi Mật Khẩu Cá Nhân</h3>
+                  <p class="text-xs text-slate-500">Tài khoản: ${state.currentUser.fullName} (${state.currentUser.username})</p>
+                </div>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+              </div>
+
+              <form onsubmit="handleChangePasswordSubmit(event)" class="mt-4 space-y-3">
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Mật khẩu hiện tại (*)</label>
+                  <input type="password" name="oldPassword" required placeholder="Nhập mật khẩu cũ" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300" />
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Mật khẩu mới (*)</label>
+                  <input type="password" name="newPassword" required placeholder="Nhập mật khẩu mới (tối thiểu 4 ký tự)" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300" />
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Xác nhận mật khẩu mới (*)</label>
+                  <input type="password" name="confirmPassword" required placeholder="Nhập lại mật khẩu mới" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300" />
+                </div>
+                <div class="pt-3 border-t flex justify-end gap-2">
+                  <button type="button" onclick="closeModal()" class="px-4 py-2 text-xs text-slate-600">Hủy</button>
+                  <button type="submit" class="px-5 py-2 text-xs font-bold text-white bg-blue-600 rounded-xl shadow-md">Đổi Mật Khẩu</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        `;
+      }
+
+      // ADMIN: RESET USER PASSWORD MODAL
+      if (state.activeModal === 'admin_reset_pass' && state.resetUserPassTarget) {
+        return `
+          <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+              <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                <div>
+                  <h3 class="text-lg font-bold text-slate-900">Đặt Mật Khẩu Cho Giáo Viên</h3>
+                  <p class="text-xs text-slate-500">Giáo viên: <b>${state.resetUserPassTarget.fullName}</b> (${state.resetUserPassTarget.username})</p>
+                </div>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+              </div>
+
+              <form onsubmit="handleAdminResetPassSubmit(event)" class="mt-4 space-y-3">
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Nhập mật khẩu mới cho Giáo viên (*)</label>
+                  <input type="text" name="newPassword" value="123456" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300 font-mono font-bold" />
+                </div>
+                <div class="pt-3 border-t flex justify-end gap-2">
+                  <button type="button" onclick="openModal('user_list')" class="px-4 py-2 text-xs text-slate-600">Quay lại</button>
+                  <button type="submit" class="px-5 py-2 text-xs font-bold text-white bg-purple-600 rounded-xl shadow-md">Lưu Mật Khẩu Mới</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        `;
+      }
+
+      // UPLOAD MODAL
+      if (state.activeModal === 'upload') {
+        const currentDeptFolders = state.teacherFolders.filter(f => f.departmentId === (state.activeCategory === 'personal' ? state.activeSubDepartment : (state.currentUser.departmentId || 'to1')));
+        const myTeacherFolder = state.teacherFolders.find(f => f.teacherId === state.currentUser.id);
+
+        return `
+          <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
+              <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                <div>
+                  <h3 class="text-lg font-bold text-slate-900">Gửi Hồ Sơ / Giáo Án Mới</h3>
+                  <p class="text-xs text-slate-500">Tài liệu sẽ tự động lưu gọn vào Thư mục Google Drive cá nhân của bạn</p>
+                </div>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+              </div>
+
+              <!-- AUTO DRIVE CONNECTION BADGE -->
+              <div class="my-4 p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 space-y-2">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="flex items-start gap-2">
+                    <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5"></i>
+                    <div>
+                      <p class="font-bold">Đã kết nối Thư mục Google Drive cá nhân:</p>
+                      <p class="font-medium text-emerald-700 mt-0.5">${myTeacherFolder ? myTeacherFolder.name : 'Thư mục Cá nhân Giáo viên'}</p>
+                    </div>
+                  </div>
+
+                  ${myTeacherFolder && myTeacherFolder.driveFolderUrl ? `
+                    <a href="${myTeacherFolder.driveFolderUrl}" target="_blank" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg flex items-center gap-1 shadow-xs transition flex-shrink-0" title="Mở thư mục để thả tệp trực tiếp vào Google Drive">
+                      <i data-lucide="external-link" class="w-3.5 h-3.5"></i> Mở Drive
+                    </a>
+                  ` : ''}
+                </div>
+                <p class="text-[11px] text-emerald-700 bg-emerald-100/60 p-2 rounded-lg border border-emerald-200/60 leading-relaxed">
+                  💡 <b>2 cách nộp bài:</b><br/>
+                  <b>Cách 1:</b> Đính kèm tệp bên dưới ➔ Bấm <b>"Gửi Hồ Sơ"</b> (Lưu trữ và quản lý trực tuyến trên web).<br/>
+                  <b>Cách 2:</b> Bấm nút <b>"Mở Drive"</b> ở trên ➔ Thả tệp thẳng vào Google Drive trên trình duyệt của bạn!
+                </p>
+              </div>
+
+              <form onsubmit="handleUploadSubmit(event)" class="space-y-4">
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Tiêu đề hồ sơ / Giáo án (*)</label>
+                  <input type="text" name="title" required placeholder="Kế hoạch giảng dạy Môn Toán Tuần 1" class="w-full text-sm px-3 py-2 rounded-xl border border-slate-300" />
+                </div>
+                
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Năm học (*)</label>
+                  <select name="schoolYear" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300">
+                    ${state.schoolYears.map(yr => `<option value="${yr}" ${yr === state.selectedSchoolYear ? 'selected' : ''}>${yr}</option>`).join('')}
+                  </select>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Tệp đính kèm (PDF, DOCX, XLSX, PPTX...)</label>
+                  <input type="file" name="file" class="w-full text-xs border border-slate-200 rounded-xl p-1.5" />
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Ghi chú thêm (Không bắt buộc)</label>
+                  <textarea name="notes" rows="2" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300" placeholder="Ghi chú nội dung giáo án..."></textarea>
+                </div>
+
+                <div class="pt-3 border-t flex justify-end gap-3">
+                  <button type="button" onclick="closeModal()" class="px-4 py-2 text-xs font-semibold text-slate-600">Hủy</button>
+                  <button type="submit" class="px-5 py-2 text-xs font-bold text-white bg-blue-600 rounded-xl shadow-md flex items-center gap-1.5">
+                    <i data-lucide="send" class="w-4 h-4"></i>
+                    <span>Gửi Hồ Sơ</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        `;
+      }
+
+      // ADMIN: USER LIST MANAGEMENT MODAL
+      if (state.activeModal === 'user_list') {
+        return `
+          <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-2xl border border-slate-200 max-h-[85vh] flex flex-col">
+              
+              <div class="flex items-center justify-between pb-4 border-b border-slate-100 flex-shrink-0">
+                <div>
+                  <h3 class="text-lg font-bold text-slate-900">Quản Lý Danh Sách Tài Khoản</h3>
+                  <p class="text-xs text-slate-500">Danh sách tài khoản giáo viên và cán bộ quản lý trong hệ thống</p>
+                </div>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+              </div>
+
+              <div class="my-4 flex items-center justify-between gap-3 flex-shrink-0">
+                <span class="text-xs font-semibold text-slate-500">Tổng số tài khoản: <b>${state.usersList.length}</b></span>
+                <button onclick="openModal('user')" class="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold px-3 py-2 rounded-xl shadow-md flex items-center gap-1.5">
+                  <i data-lucide="user-plus" class="w-4 h-4"></i> Tạo tài khoản mới
+                </button>
+              </div>
+
+              <div class="flex-1 overflow-y-auto custom-scrollbar border border-slate-200 rounded-xl">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 font-bold text-slate-600 uppercase tracking-wider">
+                    <tr>
+                      <th class="p-3">Họ và Tên</th>
+                      <th class="p-3">Tên Đăng Nhập</th>
+                      <th class="p-3">Vai Trò</th>
+                      <th class="p-3">Tổ Chuyên Môn</th>
+                      <th class="p-3 text-right">Thao Tác</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100">
+                    ${state.usersList.map(u => `
+                      <tr class="hover:bg-slate-50/80 transition">
+                        <td class="p-3 font-bold text-slate-800 flex items-center gap-2">
+                          <img src="${u.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`}" class="w-7 h-7 rounded-full bg-slate-200 object-cover" />
+                          <span>${u.fullName}</span>
+                        </td>
+                        <td class="p-3 font-mono text-slate-600 font-medium">${u.username}</td>
+                        <td class="p-3">
+                          <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${getRoleBadgeStyle(u.role)}">
+                            ${getRoleText(u.role)}
+                          </span>
+                        </td>
+                        <td class="p-3 text-slate-600 font-medium">
+                          ${state.departments.find(d => d.id === u.departmentId)?.name || 'Chung'}
+                        </td>
+                        <td class="p-3 text-right flex items-center justify-end gap-1.5">
+                          <button onclick="promptResetPass('${u.id}', '${u.fullName}')" class="text-blue-600 hover:bg-blue-50 px-2 py-1 rounded border border-blue-200 font-semibold text-[11px] flex items-center gap-1" title="Đặt lại mật khẩu cho giáo viên này">
+                            <i data-lucide="key" class="w-3.5 h-3.5"></i> Đổi MK
+                          </button>
+                          ${u.id !== state.currentUser.id ? `
+                            <button onclick="deleteUser('${u.id}')" class="text-rose-600 hover:bg-rose-50 p-1.5 rounded-lg border border-rose-200 font-semibold" title="Xóa tài khoản">
+                              <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                          ` : `<span class="text-[10px] text-slate-400 italic px-1">Đang dùng</span>`}
+                        </td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="pt-4 border-t border-slate-100 flex justify-end flex-shrink-0">
+                <button type="button" onclick="closeModal()" class="px-5 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200">Đóng</button>
+              </div>
+
+            </div>
+          </div>
+        `;
+      }
+
+      // MEMBER FOLDER MODAL
+      if (state.activeModal === 'teacher_folder') {
+        const activeDeptObj = state.departments.find(d => d.id === (state.activeCategory === 'personal' ? state.activeSubDepartment : (state.currentUser.departmentId || 'to1')));
+        const deptTeachers = state.usersList.filter(u => u.departmentId === activeDeptObj.id || u.role === 'totruong');
+
+        return `
+          <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+              <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                <h3 class="text-lg font-bold text-slate-900">Tạo Thư Mục Thành Viên (${activeDeptObj?.name})</h3>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+              </div>
+              <form onsubmit="handleTeacherFolderSubmit(event)" class="mt-4 space-y-3">
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Tên thư mục (*)</label>
+                  <input type="text" name="name" required placeholder="Thư mục Giáo án - Nguyễn Văn An" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300" />
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Gán cho Giáo viên thành viên (*)</label>
+                  <select name="teacherId" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300">
+                    ${deptTeachers.map(u => `<option value="${u.id}">${u.fullName} (${u.username})</option>`).join('')}
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Link Thư mục Google Drive cá nhân (Nếu có)</label>
+                  <input type="url" name="driveFolderUrl" placeholder="https://drive.google.com/drive/folders/..." class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300 font-mono" />
+                </div>
+                <div class="pt-3 border-t flex justify-end gap-2">
+                  <button type="button" onclick="closeModal()" class="px-4 py-2 text-xs text-slate-600">Hủy</button>
+                  <button type="submit" class="px-5 py-2 text-xs font-bold text-white bg-amber-600 rounded-xl shadow-md">Tạo Thư Mục</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        `;
+      }
+
+      // SCHOOL YEAR MODAL WITH DELETE MANAGEMENT
+      if (state.activeModal === 'school_year') {
+        return `
+          <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+              <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                <h3 class="text-lg font-bold text-slate-900">Quản Lý Năm Học</h3>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+              </div>
+
+              <!-- List Existing School Years -->
+              <div class="mt-4 mb-4 space-y-1.5 max-h-40 overflow-y-auto custom-scrollbar pr-1">
+                <label class="block text-xs font-bold text-slate-700 mb-1">Danh sách Năm học hiện có:</label>
+                ${state.schoolYears.map(yr => `
+                  <div class="flex items-center justify-between p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                    <span class="font-bold text-slate-800">${yr}</span>
+                    <button onclick="deleteSchoolYear('${yr}')" class="text-rose-600 hover:bg-rose-50 p-1 rounded hover:border hover:border-rose-200" title="Xóa năm học này">
+                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                  </div>
+                `).join('')}
+              </div>
+
+              <!-- Form Add New School Year -->
+              <form onsubmit="handleSchoolYearSubmit(event)" class="pt-3 border-t space-y-3">
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Bổ sung Năm học mới (*)</label>
+                  <input type="text" name="schoolYearInput" required placeholder="VD: 2026-2027" class="w-full text-sm px-3 py-2 rounded-xl border border-slate-300 font-semibold" />
+                  <p class="text-[11px] text-slate-400 mt-1">Định dạng: YYYY-YYYY (Ví dụ: 2026-2027)</p>
+                </div>
+                <div class="pt-3 border-t flex justify-end gap-2">
+                  <button type="button" onclick="closeModal()" class="px-4 py-2 text-xs text-slate-600">Hủy</button>
+                  <button type="submit" class="px-5 py-2 text-xs font-bold text-white bg-indigo-600 rounded-xl shadow-md">+ Thêm Năm Học</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        `;
+      }
+
+      // CREATE TEACHER ACCOUNT MODAL
+      if (state.activeModal === 'user') {
+        return `
+          <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+              <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                <h3 class="text-lg font-bold text-slate-900">Tạo Tài Khoản Giáo Viên Mới</h3>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+              </div>
+              <form onsubmit="handleUserSubmit(event)" class="mt-4 space-y-3">
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Tên đăng nhập (*)</label>
+                  <input type="text" name="username" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300" />
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Mật khẩu (*)</label>
+                  <input type="password" name="password" value="123456" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300" />
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Họ và tên Giáo viên (*)</label>
+                  <input type="text" name="fullName" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300" />
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Vai trò (Role)</label>
+                    <select name="role" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300">
+                      <option value="giaovien">Giáo viên</option>
+                      <option value="totruong">Tổ trưởng</option>
+                      <option value="bgh">Ban Giám Hiệu</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Tổ chuyên môn</label>
+                    <select name="departmentId" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300">
+                      ${state.departments.map(d => `<option value="${d.id}">${d.name}</option>`).join('')}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Email</label>
+                  <input type="email" name="email" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300" />
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Link Thư mục Google Drive của Giáo viên (Nếu có)</label>
+                  <input type="url" name="driveFolderUrl" placeholder="https://drive.google.com/drive/folders/..." class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300 font-mono" />
+                  <p class="text-[10px] text-slate-400 mt-0.5">Nếu để trống, hệ thống sẽ tự động gán thư mục Google Drive mặc định của trường.</p>
+                </div>
+                <div class="pt-3 border-t flex justify-end gap-2">
+                  <button type="button" onclick="closeModal()" class="px-4 py-2 text-xs text-slate-600">Hủy</button>
+                  <button type="submit" class="px-5 py-2 text-xs font-bold text-white bg-purple-600 rounded-xl">Tạo tài khoản</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        `;
+      }
+
+      if (state.activeModal === 'category') {
+        return `
+          <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+              <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                <h3 class="text-lg font-bold text-slate-900">Tự Tạo Mục Hồ Sơ Mới</h3>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+              </div>
+              <form onsubmit="handleCategorySubmit(event)" class="mt-4 space-y-3">
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Tên mục hồ sơ mới (*)</label>
+                  <input type="text" name="name" required placeholder="Hồ sơ Thi đua & Khen thưởng" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300" />
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Mô tả</label>
+                  <textarea name="description" rows="2" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300"></textarea>
+                </div>
+                <div class="pt-3 border-t flex justify-end gap-2">
+                  <button type="button" onclick="closeModal()" class="px-4 py-2 text-xs text-slate-600">Hủy</button>
+                  <button type="submit" class="px-5 py-2 text-xs font-bold text-white bg-purple-600 rounded-xl">Tạo danh mục</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        `;
+      }
+
+      if (state.activeModal === 'drive') {
+        return `
+          <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
+              <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                <div>
+                  <h3 class="text-lg font-bold text-slate-900">Cấu Hình Kết Nối Google Drive</h3>
+                  <p class="text-xs text-slate-500">Thiết lập lưu trữ trực tiếp vào các Thư mục Google Drive cá nhân</p>
+                </div>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+              </div>
+
+              <form onsubmit="handleDriveSubmit(event)" class="mt-4 space-y-3">
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Folder ID Google Drive Trường Học (*)</label>
+                  <input type="text" name="folderId" value="${state.driveConfig.folderId || '1HcXf2-Vfi5Vishz_SqP42bc1R8biScQA'}" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300 font-mono" />
+                  <p class="text-[10px] text-slate-400 mt-0.5">ID thư mục gốc chứa các thư mục tổ/giáo viên (Ví dụ: 1HcXf2-Vfi5Vishz_SqP42bc1R8biScQA)</p>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Google Apps Script Web App URL (Đẩy tệp thật lên Drive)</label>
+                  <input type="url" name="gasDeploymentUrl" value="${state.driveConfig.gasDeploymentUrl || ''}" placeholder="https://script.google.com/macros/s/.../exec" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300 font-mono" />
+                  <p class="text-[10px] text-emerald-600 font-medium mt-0.5">Dán URL Web App nếu bạn muốn tệp giáo án tự động đẩy trực tiếp 100% vào Google Drive thật.</p>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Service Account Email</label>
+                  <input type="email" name="serviceAccountEmail" value="${state.driveConfig.serviceAccountEmail || ''}" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300 font-mono" />
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Chế độ đồng bộ</label>
+                  <select name="syncMode" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300">
+                    <option value="hybrid" ${state.driveConfig.syncMode === 'hybrid' ? 'selected' : ''}>Linh hoạt (Đồng bộ Thư mục & Lưu trữ máy chủ)</option>
+                    <option value="drive_api" ${state.driveConfig.syncMode === 'drive_api' ? 'selected' : ''}>Google Drive Web App API</option>
+                  </select>
+                </div>
+
+                <div class="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 space-y-2">
+                  <div class="flex items-center justify-between">
+                    <p class="font-bold text-slate-800">💡 Hướng dẫn lấy Web App URL (Chỉ 1 phút):</p>
+                    <button type="button" onclick="copyGasScriptCode()" class="text-[10px] font-bold text-blue-700 bg-blue-100 hover:bg-blue-200 px-2 py-1 rounded border border-blue-300 flex items-center gap-1 transition">
+                      <i data-lucide="copy" class="w-3 h-3"></i> Copy Mã Google Apps Script
+                    </button>
+                  </div>
+                  <ol class="list-decimal list-inside space-y-1 text-[11px] text-slate-500">
+                    <li>Vào <a href="https://script.google.com" target="_blank" class="text-blue-600 font-semibold hover:underline">script.google.com</a> ➔ Tạo **Dự án mới**.</li>
+                    <li>Dán mã đã copy ➔ Bấm **Deploy** ➔ **New deployment**.</li>
+                    <li>Chọn **Web App** (Execute as: **Me**, Who has access: **Anyone**).</li>
+                    <li>Bấm **Deploy** ➔ Copy **Web App URL** thu được và dán vào ô bên trên!</li>
+                  </ol>
+                </div>
+
+                <div class="pt-3 border-t flex justify-end gap-2">
+                  <button type="button" onclick="closeModal()" class="px-4 py-2 text-xs text-slate-600">Hủy</button>
+                  <button type="submit" class="px-5 py-2 text-xs font-bold text-white bg-blue-600 rounded-xl shadow-md">Lưu cấu hình</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        `;
+      }
+
+      if (state.activeModal === 'preview' && state.previewDoc) {
+        return `
+          <div class="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl max-w-4xl w-full h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+              <div class="p-4 bg-slate-900 text-white flex items-center justify-between">
+                <div>
+                  <h4 class="font-bold text-sm truncate max-w-md">${state.previewDoc.title}</h4>
+                  <p class="text-xs text-slate-400">${state.previewDoc.fileName} • Người gửi: ${state.previewDoc.teacherName}</p>
+                </div>
+                <div class="flex items-center gap-3">
+                  <a href="${state.previewDoc.driveViewUrl}" target="_blank" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                    <i data-lucide="external-link" class="w-3.5 h-3.5"></i> Xem gốc trên Drive
+                  </a>
+                  <button onclick="closeModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-6 h-6"></i></button>
+                </div>
+              </div>
+              <div class="flex-1 bg-slate-100">
+                <iframe src="${state.previewDoc.driveEmbedUrl || state.previewDoc.driveViewUrl}" class="w-full h-full border-0"></iframe>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      return '';
+    }
+
+    window.promptResetPass = function(userId, fullName) {
+      state.resetUserPassTarget = { id: userId, fullName: fullName };
+      state.activeModal = 'admin_reset_pass';
+      renderApp();
+    };
+
+    window.setCategory = async function(catId) {
+      state.activeCategory = catId;
+      state.activeTeacherFolderId = null;
+      await fetchTeacherFolders();
+      await fetchDocuments();
+      renderApp();
+    };
+
+    window.setSubDepartment = async function(deptId) {
+      state.activeCategory = 'personal';
+      state.activeSubDepartment = deptId;
+      state.activeTeacherFolderId = null;
+      await fetchTeacherFolders();
+      await fetchDocuments();
+      renderApp();
+    };
+
+    window.selectTeacherFolder = async function(folderId) {
+      state.activeTeacherFolderId = folderId;
+      await fetchDocuments();
+      renderApp();
+    };
+
+    window.clearTeacherFolderFilter = async function() {
+      state.activeTeacherFolderId = null;
+      await fetchDocuments();
+      renderApp();
+    };
+
+    window.setViewMode = function(mode) {
+      state.viewMode = mode;
+      renderApp();
+    };
+
+    window.togglePersonalSubmenu = function() {
+      state.personalSubmenuOpen = !state.personalSubmenuOpen;
+      renderApp();
+    };
+
+    window.onSearchChange = async function(e) {
+      state.searchQuery = e.target.value;
+      await fetchDocuments();
+      renderApp();
+    };
+
+    window.onYearChange = async function(e) {
+      state.selectedSchoolYear = e.target.value;
+      await fetchDocuments();
+      renderApp();
+    };
+
+    window.openModal = function(modalName) {
+      state.activeModal = modalName;
+      renderApp();
+    };
+
+    window.closeModal = function() {
+      state.activeModal = null;
+      state.previewDoc = null;
+      state.resetUserPassTarget = null;
+      renderApp();
+    };
+
+    window.copyGasScriptCode = function() {
+      const code = `function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var folderId = data.folderId || '1HcXf2-Vfi5Vishz_SqP42bc1R8biScQA';
+    var fileName = data.fileName || 'Tai_lieu.pdf';
+    var fileBytes = Utilities.base64Decode(data.fileBase64);
+    var blob = Utilities.newBlob(fileBytes, data.mimeType || 'application/octet-stream', fileName);
+    
+    var folder;
+    try {
+      folder = DriveApp.getFolderById(folderId);
+    } catch (err) {
+      folder = DriveApp.getRootFolder();
+    }
+    
+    var file = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      fileId: file.getId(),
+      driveViewUrl: file.getUrl(),
+      driveDownloadUrl: "https://drive.google.com/uc?export=download&id=" + file.getId()
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function doGet(e) {
+  return ContentService.createTextOutput(JSON.stringify({ success: true, message: "Apps Script API Online" })).setMimeType(ContentService.MimeType.JSON);
+}`;
+
+      navigator.clipboard.writeText(code).then(() => {
+        showToast("Đã copy mã Google Apps Script vào bộ nhớ tạm!");
+      }).catch(() => {
+        showToast("Không thể copy tự động, vui lòng copy thủ công", "error");
+      });
+    };
+
+    window.openPreview = function(docId) {
+      const doc = state.documents.find(d => d.id === docId);
+      if (doc) {
+        state.previewDoc = doc;
+        state.activeModal = 'preview';
+        renderApp();
+      }
+    };
+
+    document.addEventListener('DOMContentLoaded', initData);
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      initData();
+    }
+  </script>
+</body>
+</html>

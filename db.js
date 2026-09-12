@@ -1,0 +1,362 @@
+const fs = require('fs');
+const path = require('path');
+
+const DATA_DIR = path.join(__dirname, 'data');
+const DB_FILE = path.join(DATA_DIR, 'database.json');
+
+// Ensure data directory exists
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+// Initial Default Database Schema & Data
+const initialData = {
+  driveConfig: {
+    folderId: '1HcXf2-Vfi5Vishz_SqP42bc1R8biScQA',
+    serviceAccountEmail: 'truong-hoc-drive@school-system.iam.gserviceaccount.com',
+    syncMode: 'hybrid', // 'hybrid' (allow direct upload & link input), 'drive_api'
+    apiKey: '',
+    updatedAt: new Date().toISOString()
+  },
+  departments: [
+    { id: 'to1', name: 'Tổ 1', description: 'Tổ chuyên môn Khối 1' },
+    { id: 'to2', name: 'Tổ 2', description: 'Tổ chuyên môn Khối 2' },
+    { id: 'to3', name: 'Tổ 3', description: 'Tổ chuyên môn Khối 3' },
+    { id: 'to4', name: 'Tổ 4', description: 'Tổ chuyên môn Khối 4' },
+    { id: 'to5', name: 'Tổ 5', description: 'Tổ chuyên môn Khối 5' },
+    { id: 'tonangkhieu', name: 'Tổ Năng khiếu', description: 'Âm nhạc, Mỹ thuật, Thể dục, Tin học, Ngoại ngữ' }
+  ],
+  categories: [
+    { id: 'school', name: 'Hồ sơ nhà trường', icon: 'Building2', type: 'system', isCustom: false, description: 'Các văn bản chỉ đạo, kế hoạch năm học, quy chế nhà trường' },
+    { id: 'group', name: 'Hồ sơ tổ', icon: 'Users', type: 'system', isCustom: false, description: 'Kế hoạch hoạt động tổ chuyên môn, biên bản sinh hoạt tổ' },
+    { id: 'personal', name: 'Hồ sơ cá nhân', icon: 'FolderUser', type: 'system', isCustom: false, description: 'Hồ sơ chuyên môn cá nhân giáo viên chia theo từng tổ' },
+    { id: 'doi', name: 'Hồ sơ đội', icon: 'Flag', type: 'system', isCustom: false, description: 'Kế hoạch và hồ sơ hoạt động Đội Thiếu niên Tiền phong' },
+    { id: 'doan', name: 'Hồ sơ đoàn', icon: 'Award', type: 'system', isCustom: false, description: 'Hồ sơ công tác Đoàn Thanh niên Cộng sản Hồ Chí Minh' }
+  ],
+  users: [
+    {
+      id: 'usr_admin',
+      username: 'admin',
+      passwordHash: 'admin123', // In real app hashed with bcrypt
+      fullName: 'Quản trị viên Hệ thống',
+      email: 'admin@school.edu.vn',
+      role: 'admin', // 'admin', 'bgh', 'totruong', 'giaovien'
+      departmentId: null,
+      phone: '0901234567',
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+      createdAt: '2026-01-10T08:00:00Z'
+    },
+    {
+      id: 'usr_bgh',
+      username: 'bgh',
+      passwordHash: 'bgh123',
+      fullName: 'ThS. Nguyễn Văn Minh (Hiệu trưởng)',
+      email: 'hieutruong@school.edu.vn',
+      role: 'bgh',
+      departmentId: null,
+      phone: '0902345678',
+      avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+      createdAt: '2026-01-10T08:30:00Z'
+    },
+    {
+      id: 'usr_tt1',
+      username: 'totruong1',
+      passwordHash: '123456',
+      fullName: 'Trần Thị Mai',
+      email: 'tt.mai@school.edu.vn',
+      role: 'totruong',
+      departmentId: 'to1',
+      phone: '0903456789',
+      avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150',
+      createdAt: '2026-01-11T09:00:00Z'
+    },
+    {
+      id: 'usr_gv1',
+      username: 'giaovien1',
+      passwordHash: '123456',
+      fullName: 'Nguyễn Văn An',
+      email: 'gv.an@school.edu.vn',
+      role: 'giaovien',
+      departmentId: 'to1',
+      phone: '0904567890',
+      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+      createdAt: '2026-01-12T10:00:00Z'
+    },
+    {
+      id: 'usr_gv2',
+      username: 'giaovien2',
+      passwordHash: '123456',
+      fullName: 'Phạm Thị Thảo',
+      email: 'gv.thao@school.edu.vn',
+      role: 'giaovien',
+      departmentId: 'to1',
+      phone: '0905678901',
+      avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
+      createdAt: '2026-01-12T10:15:00Z'
+    },
+    {
+      id: 'usr_tt2',
+      username: 'totruong2',
+      passwordHash: '123456',
+      fullName: 'Lê Văn Bình',
+      email: 'tt.binh@school.edu.vn',
+      role: 'totruong',
+      departmentId: 'to2',
+      phone: '0906789012',
+      avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
+      createdAt: '2026-01-13T11:00:00Z'
+    },
+    {
+      id: 'usr_gv3',
+      username: 'giaovien3',
+      passwordHash: '123456',
+      fullName: 'Đỗ Hoàng Anh',
+      email: 'gv.hoanganh@school.edu.vn',
+      role: 'giaovien',
+      departmentId: 'to2',
+      phone: '0907890123',
+      avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150',
+      createdAt: '2026-01-13T11:30:00Z'
+    },
+    {
+      id: 'usr_gv_nk',
+      username: 'giaovien_nk',
+      passwordHash: '123456',
+      fullName: 'Vũ Quốc Cường',
+      email: 'gv.cuong@school.edu.vn',
+      role: 'giaovien',
+      departmentId: 'tonangkhieu',
+      phone: '0908901234',
+      avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150',
+      createdAt: '2026-01-14T09:30:00Z'
+    }
+  ],
+  schoolYears: ['2026-2027'],
+  teacherFolders: [
+    {
+      id: 'tf_gv1',
+      name: 'Thư mục Giáo án & Hồ sơ - Nguyễn Văn An',
+      teacherId: 'usr_gv1',
+      teacherName: 'Nguyễn Văn An',
+      departmentId: 'to1',
+      driveFolderUrl: 'https://drive.google.com/drive/u/3/folders/1HcXf2-Vfi5Vishz_SqP42bc1R8biScQA',
+      createdAt: '2026-09-01T10:00:00Z'
+    },
+    {
+      id: 'tf_gv2',
+      name: 'Thư mục Giáo án & Hồ sơ - Phạm Thị Thảo',
+      teacherId: 'usr_gv2',
+      teacherName: 'Phạm Thị Thảo',
+      departmentId: 'to1',
+      driveFolderUrl: 'https://drive.google.com/drive/u/3/folders/1HcXf2-Vfi5Vishz_SqP42bc1R8biScQA',
+      createdAt: '2026-09-01T10:00:00Z'
+    },
+    {
+      id: 'tf_gv3',
+      name: 'Thư mục Giáo án & Hồ sơ - Đỗ Hoàng Anh',
+      teacherId: 'usr_gv3',
+      teacherName: 'Đỗ Hoàng Anh',
+      departmentId: 'to2',
+      driveFolderUrl: 'https://drive.google.com/drive/u/3/folders/1HcXf2-Vfi5Vishz_SqP42bc1R8biScQA',
+      createdAt: '2026-09-01T10:00:00Z'
+    },
+    {
+      id: 'tf_gv_nk',
+      name: 'Thư mục Giáo án - Vũ Quốc Cường (Năng khiếu)',
+      teacherId: 'usr_gv_nk',
+      teacherName: 'Vũ Quốc Cường',
+      departmentId: 'tonangkhieu',
+      driveFolderUrl: 'https://drive.google.com/drive/u/3/folders/1HcXf2-Vfi5Vishz_SqP42bc1R8biScQA',
+      createdAt: '2026-09-01T10:00:00Z'
+    }
+  ],
+  documents: [
+    {
+      id: 'doc_001',
+      title: 'Kế hoạch giảng dạy Cá nhân HK1 - Năm học 2026-2027',
+      categoryId: 'personal',
+      departmentId: 'to1',
+      teacherId: 'usr_gv1',
+      teacherName: 'Nguyễn Văn An',
+      fileName: 'Ke_hoach_giang_day_HK1_NguyenVanAn.pdf',
+      fileSize: '2.4 MB',
+      driveViewUrl: 'https://drive.google.com/file/d/1vA_sample_view_url_nguyen_van_an/view?usp=sharing',
+      driveDownloadUrl: 'https://drive.google.com/uc?export=download&id=1vA_sample_view_url_nguyen_van_an',
+      status: 'approved', // 'pending', 'approved', 'rejected'
+      schoolYear: '2026-2027',
+      semester: 'Học kỳ I',
+      notes: 'Đã hoàn thành duyệt bởi Tổ trưởng Trần Thị Mai',
+      uploadedAt: '2026-09-01T14:20:00Z'
+    },
+    {
+      id: 'doc_002',
+      title: 'Giáo án điện tử Môn Toán Lớp 1 - Tuần 1 đến Tuần 4',
+      categoryId: 'personal',
+      departmentId: 'to1',
+      teacherId: 'usr_gv1',
+      teacherName: 'Nguyễn Văn An',
+      fileName: 'Giao_an_Toan_Lop1_Tuan1_4.docx',
+      fileSize: '4.8 MB',
+      driveViewUrl: 'https://drive.google.com/file/d/1vB_sample_view_url_giao_an_an/view?usp=sharing',
+      driveDownloadUrl: 'https://drive.google.com/uc?export=download&id=1vB_sample_view_url_giao_an_an',
+      status: 'approved',
+      schoolYear: '2026-2027',
+      semester: 'Học kỳ I',
+      notes: 'Giáo án minh họa sinh động có tích hợp trò chơi',
+      uploadedAt: '2026-09-03T10:15:00Z'
+    },
+    {
+      id: 'doc_003',
+      title: 'Báo cáo Sáng kiến kinh nghiệm dạy Tiếng Việt 1',
+      categoryId: 'personal',
+      departmentId: 'to1',
+      teacherId: 'usr_gv2',
+      teacherName: 'Phạm Thị Thảo',
+      fileName: 'Sang_kien_kinh_nghiem_PhamThiThao.pdf',
+      fileSize: '1.8 MB',
+      driveViewUrl: 'https://drive.google.com/file/d/1vC_sample_view_url_sang_kien_thao/view?usp=sharing',
+      driveDownloadUrl: 'https://drive.google.com/uc?export=download&id=1vC_sample_view_url_sang_kien_thao',
+      status: 'pending',
+      schoolYear: '2026-2027',
+      semester: 'Học kỳ I',
+      notes: 'Gửi tổ trưởng kiểm tra nội dung',
+      uploadedAt: '2026-09-08T16:00:00Z'
+    },
+    {
+      id: 'doc_004',
+      title: 'Kế hoạch sinh hoạt chuyên môn Tổ 1 - Tháng 9/2026',
+      categoryId: 'group',
+      departmentId: 'to1',
+      teacherId: 'usr_tt1',
+      teacherName: 'Trần Thị Mai',
+      fileName: 'Ke_hoach_sinh_hoat_to1_Thang9.pdf',
+      fileSize: '1.2 MB',
+      driveViewUrl: 'https://drive.google.com/file/d/1vD_sample_to1_plan/view?usp=sharing',
+      driveDownloadUrl: 'https://drive.google.com/uc?export=download&id=1vD_sample_to1_plan',
+      status: 'approved',
+      schoolYear: '2026-2027',
+      semester: 'Học kỳ I',
+      notes: 'Hồ sơ Tổ chuyên môn 1',
+      uploadedAt: '2026-09-02T09:00:00Z'
+    },
+    {
+      id: 'doc_005',
+      title: 'Giáo án Năng khiếu Âm nhạc Lớp 4 & 5 - Chuẩn bị Hội diễn',
+      categoryId: 'personal',
+      departmentId: 'tonangkhieu',
+      teacherId: 'usr_gv_nk',
+      teacherName: 'Vũ Quốc Cường',
+      fileName: 'Giao_an_Am_nhac_Lop4_5.docx',
+      fileSize: '3.1 MB',
+      driveViewUrl: 'https://drive.google.com/file/d/1vE_sample_am_nhac_cuong/view?usp=sharing',
+      driveDownloadUrl: 'https://drive.google.com/uc?export=download&id=1vE_sample_am_nhac_cuong',
+      status: 'approved',
+      schoolYear: '2026-2027',
+      semester: 'Học kỳ I',
+      notes: 'Hồ sơ cá nhân Tổ Năng khiếu',
+      uploadedAt: '2026-09-05T11:45:00Z'
+    },
+    {
+      id: 'doc_006',
+      title: 'Nghị quyết Hội nghị Cán bộ Công chức Nhà trường Năm học 2026-2027',
+      categoryId: 'school',
+      departmentId: null,
+      teacherId: 'usr_bgh',
+      teacherName: 'ThS. Nguyễn Văn Minh (Hiệu trưởng)',
+      fileName: 'Nghi_quyet_HNCBCC_2025_2026.pdf',
+      fileSize: '5.2 MB',
+      driveViewUrl: 'https://drive.google.com/file/d/1vF_sample_school_res/view?usp=sharing',
+      driveDownloadUrl: 'https://drive.google.com/uc?export=download&id=1vF_sample_school_res',
+      status: 'approved',
+      schoolYear: '2026-2027',
+      semester: 'Học kỳ I',
+      notes: 'Văn bản chỉ đạo chung toàn trường',
+      uploadedAt: '2026-08-30T15:30:00Z'
+    },
+    {
+      id: 'doc_007',
+      title: 'Kế hoạch công tác Đội và phong trào Thiếu nhi Năm học mới',
+      categoryId: 'doi',
+      departmentId: null,
+      teacherId: 'usr_gv2',
+      teacherName: 'Phạm Thị Thảo (Tổng Tùy Phụ trách)',
+      fileName: 'Ke_hoach_cong_tac_Doi_2025_2026.pdf',
+      fileSize: '2.9 MB',
+      driveViewUrl: 'https://drive.google.com/file/d/1vG_sample_doi_plan/view?usp=sharing',
+      driveDownloadUrl: 'https://drive.google.com/uc?export=download&id=1vG_sample_doi_plan',
+      status: 'approved',
+      schoolYear: '2026-2027',
+      semester: 'Học kỳ I',
+      notes: 'Hồ sơ Công tác Đội',
+      uploadedAt: '2026-09-04T08:20:00Z'
+    },
+    {
+      id: 'doc_008',
+      title: 'Chương trình Tình nguyện Mùa thu - Chi đoàn Giáo viên',
+      categoryId: 'doan',
+      departmentId: null,
+      teacherId: 'usr_gv3',
+      teacherName: 'Đỗ Hoàng Anh (Bí thư Chi đoàn)',
+      fileName: 'Ke_hoach_Tinh_nguyen_Mua_thu_Chi_doan.pdf',
+      fileSize: '1.9 MB',
+      driveViewUrl: 'https://drive.google.com/file/d/1vH_sample_doan_plan/view?usp=sharing',
+      driveDownloadUrl: 'https://drive.google.com/uc?export=download&id=1vH_sample_doan_plan',
+      status: 'approved',
+      schoolYear: '2026-2027',
+      semester: 'Học kỳ I',
+      notes: 'Hồ sơ Công tác Đoàn',
+      uploadedAt: '2026-09-07T14:10:00Z'
+    }
+  ]
+};
+
+// Functions to load and save data
+function loadDB() {
+  try {
+    if (!fs.existsSync(DB_FILE)) {
+      fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2), 'utf8');
+      return initialData;
+    }
+    const raw = fs.readFileSync(DB_FILE, 'utf8');
+    const data = JSON.parse(raw);
+    if (!data.schoolYears || JSON.stringify(data.schoolYears) !== JSON.stringify(['2026-2027'])) {
+      data.schoolYears = ['2026-2027'];
+      dirty = true;
+    }
+    if (data.documents) {
+      data.documents.forEach(d => {
+        if (d.schoolYear !== '2026-2027') {
+          d.schoolYear = '2026-2027';
+          dirty = true;
+        }
+      });
+    }
+    if (!data.teacherFolders) {
+      data.teacherFolders = initialData.teacherFolders;
+      dirty = true;
+    }
+    if (dirty) {
+      saveDB(data);
+    }
+    return data;
+  } catch (err) {
+    console.error('Error reading DB, re-initializing:', err);
+    fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2), 'utf8');
+    return initialData;
+  }
+}
+
+function saveDB(data) {
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
+    return true;
+  } catch (err) {
+    console.error('Error writing DB:', err);
+    return false;
+  }
+}
+
+module.exports = {
+  loadDB,
+  saveDB
+};
