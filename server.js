@@ -145,6 +145,30 @@ app.post('/api/categories', (req, res) => {
   res.json({ success: true, category: newCat, message: 'Đã tạo mục hồ sơ mới thành công' });
 });
 
+// Admin: Update Category (Name, Description, Icon)
+app.put('/api/categories/:id', (req, res) => {
+  const currentUser = getUserFromHeader(req);
+  if (currentUser.role !== 'admin') {
+    return res.status(403).json({ success: false, message: 'Chỉ Admin mới có quyền sửa danh mục' });
+  }
+
+  const catId = req.params.id;
+  const { name, description, icon } = req.body;
+  const db = loadDB();
+  const cat = db.categories.find(c => c.id === catId);
+
+  if (!cat) {
+    return res.status(404).json({ success: false, message: 'Không tìm thấy danh mục' });
+  }
+
+  if (name && name.trim()) cat.name = name.trim();
+  if (description !== undefined) cat.description = description.trim();
+  if (icon) cat.icon = icon;
+
+  saveDB(db);
+  res.json({ success: true, category: cat, message: 'Đã cập nhật thông tin danh mục thành công' });
+});
+
 // Admin: Delete Custom Category
 app.delete('/api/categories/:id', (req, res) => {
   const currentUser = getUserFromHeader(req);
@@ -282,6 +306,117 @@ app.put('/api/users/:id', (req, res) => {
   saveDB(db);
   const { passwordHash, ...userInfo } = user;
   res.json({ success: true, user: userInfo, message: 'Đã cập nhật thông tin tài khoản và đồng bộ Thư mục Google Drive!' });
+});
+
+// Helper for Vietnamese slug/username generation: hovaten.qc
+function removeVietnameseTones(str) {
+  if (!str) return '';
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .toLowerCase();
+}
+
+function generateUsernameFromFullName(fullName, existingUsers = []) {
+  const base = removeVietnameseTones(fullName) || 'giaovien';
+  let candidate = base + '.qc';
+  let counter = 1;
+  while (existingUsers.some(u => u.username === candidate)) {
+    candidate = `${base}${counter}.qc`;
+    counter++;
+  }
+  return candidate;
+}
+
+// Admin: Bulk Create Teacher Accounts (Auto username: hovaten.qc)
+app.post('/api/users/bulk', (req, res) => {
+  const currentUser = getUserFromHeader(req);
+  if (currentUser.role !== 'admin') {
+    return res.status(403).json({ success: false, message: 'Chỉ Admin mới có quyền khởi tạo tài khoản hàng loạt' });
+  }
+
+  const { teachers } = req.body; // Array of { fullName, departmentId, username, password, driveFolderUrl }
+  if (!Array.isArray(teachers) || teachers.length === 0) {
+    return res.status(400).json({ success: false, message: 'Danh sách giáo viên không hợp lệ' });
+  }
+
+  const db = loadDB();
+  if (!db.teacherFolders) db.teacherFolders = [];
+
+  const createdUsers = [];
+  let count = 0;
+
+  teachers.forEach(t => {
+    if (!t.fullName || !t.fullName.trim()) return;
+    const name = t.fullName.trim();
+    const finalUsername = (t.username && t.username.trim()) ? t.username.trim() : generateUsernameFromFullName(name, db.users);
+    
+    // Skip if username already exists
+    if (db.users.some(u => u.username === finalUsername)) {
+      return;
+    }
+
+    const newUser = {
+      id: 'usr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+      username: finalUsername,
+      passwordHash: t.password || '123456',
+      fullName: name,
+      email: `${finalUsername}@school.edu.vn`,
+      role: t.role || 'giaovien',
+      departmentId: t.departmentId || 'to1',
+      phone: t.phone || '',
+      avatar: '',
+      createdAt: new Date().toISOString()
+    };
+
+    db.users.push(newUser);
+
+    const newFolder = {
+      id: 'tf_' + newUser.id,
+      name: `Thư mục Hồ sơ & Giáo án - ${newUser.fullName}`,
+      teacherId: newUser.id,
+      teacherName: newUser.fullName,
+      departmentId: newUser.departmentId,
+      driveFolderUrl: t.driveFolderUrl || (db.driveConfig.folderId ? `https://drive.google.com/drive/u/3/folders/${db.driveConfig.folderId}` : ''),
+      createdAt: new Date().toISOString()
+    };
+    db.teacherFolders.push(newFolder);
+
+    const { passwordHash, ...userInfo } = newUser;
+    createdUsers.push(userInfo);
+    count++;
+  });
+
+  saveDB(db);
+  res.json({
+    success: true,
+    count,
+    createdUsers,
+    message: `Đã tạo thành công ${count} tài khoản giáo viên mới với cấu trúc hovaten.qc!`
+  });
+});
+
+// Update Profile & Avatar for Logged-In User
+app.put('/api/auth/profile', (req, res) => {
+  const currentUser = getUserFromHeader(req);
+  const { avatar, phone, email } = req.body;
+  const db = loadDB();
+  const user = db.users.find(u => u.id === currentUser.id);
+
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'Không tìm thấy thông tin tài khoản' });
+  }
+
+  if (avatar !== undefined) user.avatar = avatar.trim();
+  if (phone !== undefined) user.phone = phone.trim();
+  if (email !== undefined) user.email = email.trim();
+
+  saveDB(db);
+  const { passwordHash, ...userInfo } = user;
+  res.json({ success: true, user: userInfo, message: 'Cập nhật ảnh đại diện & thông tin cá nhân thành công!' });
 });
 
 // Admin: Delete User Account

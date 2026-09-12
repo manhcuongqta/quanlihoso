@@ -43,7 +43,7 @@ const initialData = {
       role: 'admin', // 'admin', 'bgh', 'totruong', 'giaovien'
       departmentId: null,
       phone: '0901234567',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+      avatar: '',
       createdAt: '2026-01-10T08:00:00Z'
     },
     {
@@ -55,7 +55,7 @@ const initialData = {
       role: 'bgh',
       departmentId: null,
       phone: '0902345678',
-      avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+      avatar: '',
       createdAt: '2026-01-10T08:30:00Z'
     },
     {
@@ -67,7 +67,7 @@ const initialData = {
       role: 'totruong',
       departmentId: 'to1',
       phone: '0903456789',
-      avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150',
+      avatar: '',
       createdAt: '2026-01-11T09:00:00Z'
     },
     {
@@ -79,7 +79,7 @@ const initialData = {
       role: 'giaovien',
       departmentId: 'to1',
       phone: '0904567890',
-      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+      avatar: '',
       createdAt: '2026-01-12T10:00:00Z'
     },
     {
@@ -91,7 +91,7 @@ const initialData = {
       role: 'giaovien',
       departmentId: 'to1',
       phone: '0905678901',
-      avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
+      avatar: '',
       createdAt: '2026-01-12T10:15:00Z'
     },
     {
@@ -103,7 +103,7 @@ const initialData = {
       role: 'totruong',
       departmentId: 'to2',
       phone: '0906789012',
-      avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
+      avatar: '',
       createdAt: '2026-01-13T11:00:00Z'
     },
     {
@@ -115,7 +115,7 @@ const initialData = {
       role: 'giaovien',
       departmentId: 'to2',
       phone: '0907890123',
-      avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150',
+      avatar: '',
       createdAt: '2026-01-13T11:30:00Z'
     },
     {
@@ -127,7 +127,7 @@ const initialData = {
       role: 'giaovien',
       departmentId: 'tonangkhieu',
       phone: '0908901234',
-      avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150',
+      avatar: '',
       createdAt: '2026-01-14T09:30:00Z'
     }
   ],
