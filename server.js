@@ -265,7 +265,7 @@ app.put('/api/users/:id', (req, res) => {
   }
 
   const userId = req.params.id;
-  const { fullName, email, role, departmentId, phone, password, driveFolderUrl } = req.body;
+  const { username, fullName, email, role, departmentId, phone, password, driveFolderUrl } = req.body;
   const db = loadDB();
   const user = db.users.find(u => u.id === userId);
 
@@ -273,11 +273,19 @@ app.put('/api/users/:id', (req, res) => {
     return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng' });
   }
 
-  if (fullName) user.fullName = fullName;
-  if (email) user.email = email;
+  if (username && username.trim()) {
+    const cleanUsername = username.trim();
+    if (db.users.some(u => u.username === cleanUsername && u.id !== userId)) {
+      return res.status(400).json({ success: false, message: 'Tên đăng nhập đã được sử dụng bởi tài khoản khác' });
+    }
+    user.username = cleanUsername;
+  }
+
+  if (fullName) user.fullName = fullName.trim();
+  if (email) user.email = email.trim();
   if (role) user.role = role;
   if (departmentId !== undefined) user.departmentId = departmentId;
-  if (phone !== undefined) user.phone = phone;
+  if (phone !== undefined) user.phone = phone.trim();
   if (password) user.passwordHash = password;
 
   // Sync teacher member folder
@@ -285,11 +293,11 @@ app.put('/api/users/:id', (req, res) => {
   let tf = db.teacherFolders.find(f => f.teacherId === userId);
   if (tf) {
     if (fullName) {
-      tf.name = `Thư mục Hồ sơ & Giáo án - ${fullName}`;
-      tf.teacherName = fullName;
+      tf.name = `Thư mục Hồ sơ & Giáo án - ${fullName.trim()}`;
+      tf.teacherName = fullName.trim();
     }
     if (departmentId !== undefined) tf.departmentId = departmentId;
-    if (driveFolderUrl !== undefined) tf.driveFolderUrl = driveFolderUrl;
+    if (driveFolderUrl !== undefined) tf.driveFolderUrl = driveFolderUrl.trim();
   } else {
     tf = {
       id: 'tf_' + userId,
@@ -297,7 +305,7 @@ app.put('/api/users/:id', (req, res) => {
       teacherId: userId,
       teacherName: user.fullName,
       departmentId: user.departmentId || 'to1',
-      driveFolderUrl: driveFolderUrl || (db.driveConfig.folderId ? `https://drive.google.com/drive/u/3/folders/${db.driveConfig.folderId}` : ''),
+      driveFolderUrl: (driveFolderUrl !== undefined ? driveFolderUrl.trim() : '') || (db.driveConfig.folderId ? `https://drive.google.com/drive/u/3/folders/${db.driveConfig.folderId}` : ''),
       createdAt: new Date().toISOString()
     };
     db.teacherFolders.push(tf);
@@ -812,10 +820,55 @@ app.delete('/api/teacher-folders/:id', (req, res) => {
   res.json({ success: true, message: 'Đã xóa thư mục thành viên thành công' });
 });
 
+// Admin / Totruong: Update Teacher Member Folder Name & Drive Link
+app.put('/api/teacher-folders/:id', (req, res) => {
+  const currentUser = getUserFromHeader(req);
+  if (!['admin', 'totruong', 'bgh'].includes(currentUser.role)) {
+    return res.status(403).json({ success: false, message: 'Bạn không có quyền sửa thư mục này' });
+  }
+
+  const folderId = req.params.id;
+  const { name, driveFolderUrl } = req.body;
+  const db = loadDB();
+  if (!db.teacherFolders) db.teacherFolders = [];
+
+  const folder = db.teacherFolders.find(f => f.id === folderId);
+  if (!folder) {
+    return res.status(404).json({ success: false, message: 'Không tìm thấy thư mục' });
+  }
+
+  if (name) folder.name = name.trim();
+  if (driveFolderUrl !== undefined) folder.driveFolderUrl = driveFolderUrl.trim();
+
+  saveDB(db);
+  res.json({ success: true, folder, message: 'Đã cập nhật tên và đường dẫn thư mục thành công!' });
+});
+
+// Upload Profile Avatar Image File From Computer
+app.post('/api/auth/profile/avatar', upload.single('avatarFile'), (req, res) => {
+  const currentUser = getUserFromHeader(req);
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: 'Vui lòng chọn tệp hình ảnh từ máy tính' });
+  }
+
+  const db = loadDB();
+  const user = db.users.find(u => u.id === currentUser.id);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'Không tìm thấy thông tin tài khoản' });
+  }
+
+  const avatarUrl = '/uploads/' + req.file.filename;
+  user.avatar = avatarUrl;
+  saveDB(db);
+
+  const { passwordHash, ...userInfo } = user;
+  res.json({ success: true, user: userInfo, avatarUrl, message: 'Đã tải lên và cập nhật ảnh đại diện từ máy tính thành công!' });
+});
+
 // Auto-sync new logo if available in uploads
 try {
   const fs = require('fs');
-  const uploadedLogo = 'C:/Users/manhc/.gemini/antigravity/brain/f094e6ff-cfee-456b-9091-0b364a0cea47/.user_uploaded/media_1789199367443.jpg';
+  const uploadedLogo = 'C:/Users/manhc/.gemini/antigravity/brain/f094e6ff-cfee-456b-9091-0b364a0cea47/.user_uploaded/media_1789203770428.jpg';
   const targetLogo = path.join(__dirname, 'public', 'logo.jpg');
   if (fs.existsSync(uploadedLogo)) {
     fs.copyFileSync(uploadedLogo, targetLogo);
