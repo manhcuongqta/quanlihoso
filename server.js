@@ -812,6 +812,52 @@ app.delete('/api/teacher-folders/:id', (req, res) => {
   res.json({ success: true, message: 'Đã xóa thư mục thành viên thành công' });
 });
 
+// Auto-sync new logo if available in uploads
+try {
+  const fs = require('fs');
+  const uploadedLogo = 'C:/Users/manhc/.gemini/antigravity/brain/f094e6ff-cfee-456b-9091-0b364a0cea47/.user_uploaded/media_1789199367443.jpg';
+  const targetLogo = path.join(__dirname, 'public', 'logo.jpg');
+  if (fs.existsSync(uploadedLogo)) {
+    fs.copyFileSync(uploadedLogo, targetLogo);
+  }
+} catch (e) {}
+
+// Admin API: Export Database Backup JSON
+app.get('/api/admin/export-db', (req, res) => {
+  const user = getUserFromHeader(req);
+  if (user.role !== 'admin') {
+    return res.status(403).json({ success: false, message: 'Chỉ Admin mới có quyền xuất backup dữ liệu' });
+  }
+  const db = loadDB();
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename=database_quynh_chau_${Date.now()}.json`);
+  res.send(JSON.stringify(db, null, 2));
+});
+
+// Admin API: Import Database Restore JSON
+app.post('/api/admin/import-db', upload.single('dbFile'), (req, res) => {
+  const user = getUserFromHeader(req);
+  if (user.role !== 'admin') {
+    return res.status(403).json({ success: false, message: 'Chỉ Admin mới có quyền khôi phục dữ liệu' });
+  }
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: 'Vui lòng chọn tệp JSON backup' });
+  }
+  try {
+    const fs = require('fs');
+    const raw = fs.readFileSync(req.file.path, 'utf8');
+    const newDb = JSON.parse(raw);
+    if (!newDb.users || !newDb.categories) {
+      return res.status(400).json({ success: false, message: 'Tệp backup JSON không đúng cấu trúc' });
+    }
+    saveDB(newDb);
+    try { fs.unlinkSync(req.file.path); } catch (e) {}
+    res.json({ success: true, message: 'Khôi phục toàn bộ dữ liệu thành công!' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Lỗi đọc tệp JSON backup: ' + err.message });
+  }
+});
+
 // Catch-all to serve single page app
 app.get('*', (req, res) => {
   const fs = require('fs');
