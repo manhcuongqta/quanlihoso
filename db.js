@@ -28,7 +28,7 @@ const initialData = {
   ],
   categories: [
     { id: 'school', name: 'Hồ sơ nhà trường', icon: 'Building2', type: 'system', isCustom: false, description: 'Các văn bản chỉ đạo, kế hoạch năm học, quy chế nhà trường' },
-    { id: 'group', name: 'Hồ sơ tổ', icon: 'Users', type: 'system', isCustom: false, description: 'Kế hoạch hoạt động tổ chuyên môn, biên bản sinh hoạt tổ' },
+    { id: 'group', name: 'Hồ sơ tổ chuyên môn', icon: 'Users', type: 'system', isCustom: false, description: 'Kế hoạch hoạt động tổ chuyên môn, biên bản sinh hoạt tổ' },
     { id: 'personal', name: 'Hồ sơ cá nhân', icon: 'FolderUser', type: 'system', isCustom: false, description: 'Hồ sơ chuyên môn cá nhân giáo viên chia theo từng tổ' },
     { id: 'doi', name: 'Hồ sơ đội', icon: 'Flag', type: 'system', isCustom: false, description: 'Kế hoạch và hồ sơ hoạt động Đội Thiếu niên Tiền phong' },
     { id: 'doan', name: 'Hồ sơ đoàn', icon: 'Award', type: 'system', isCustom: false, description: 'Hồ sơ công tác Đoàn Thanh niên Cộng sản Hồ Chí Minh' }
