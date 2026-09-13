@@ -213,10 +213,13 @@ app.post('/api/users', (req, res) => {
     return res.status(403).json({ success: false, message: 'Chỉ Admin mới có quyền tạo tài khoản' });
   }
 
-  const { username, password, fullName, email, role, departmentId, phone, driveFolderUrl } = req.body;
-  if (!username || !password || !fullName || !role) {
+  const { username, password, fullName, email, role, roles, departmentId, phone, driveFolderUrl } = req.body;
+  if (!username || !password || !fullName) {
     return res.status(400).json({ success: false, message: 'Vui lòng điền đầy đủ các thông tin bắt buộc' });
   }
+
+  const userRoles = Array.isArray(roles) && roles.length > 0 ? roles : [role || 'giaovien'];
+  const primaryRole = userRoles.includes('admin') ? 'admin' : userRoles.includes('bgh') ? 'bgh' : userRoles.includes('totruong') ? 'totruong' : userRoles[0];
 
   const db = loadDB();
   if (db.users.some(u => u.username === username)) {
@@ -229,10 +232,11 @@ app.post('/api/users', (req, res) => {
     passwordHash: password,
     fullName,
     email: email || `${username}@school.edu.vn`,
-    role, // 'admin', 'bgh', 'totruong', 'giaovien'
+    role: primaryRole,
+    roles: userRoles,
     departmentId: departmentId || null,
     phone: phone || '',
-    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`,
+    avatar: '',
     createdAt: new Date().toISOString()
   };
 
@@ -265,7 +269,7 @@ app.put('/api/users/:id', (req, res) => {
   }
 
   const userId = req.params.id;
-  const { username, fullName, email, role, departmentId, phone, password, driveFolderUrl } = req.body;
+  const { username, fullName, email, role, roles, departmentId, phone, password, driveFolderUrl } = req.body;
   const db = loadDB();
   const user = db.users.find(u => u.id === userId);
 
@@ -283,7 +287,14 @@ app.put('/api/users/:id', (req, res) => {
 
   if (fullName) user.fullName = fullName.trim();
   if (email) user.email = email.trim();
-  if (role) user.role = role;
+
+  if (roles && Array.isArray(roles) && roles.length > 0) {
+    user.roles = roles;
+    user.role = roles.includes('admin') ? 'admin' : roles.includes('bgh') ? 'bgh' : roles.includes('totruong') ? 'totruong' : roles[0];
+  } else if (role) {
+    user.role = role;
+    if (!user.roles) user.roles = [role];
+  }
   if (departmentId !== undefined) user.departmentId = departmentId;
   if (phone !== undefined) user.phone = phone.trim();
   if (password) user.passwordHash = password;

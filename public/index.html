@@ -516,11 +516,15 @@
       e.preventDefault();
       if (!state.editingUserTarget) return;
       const form = e.target;
+      const checkedRoles = Array.from(form.querySelectorAll('input[name="roles"]:checked')).map(cb => cb.value);
+      const roles = checkedRoles.length > 0 ? checkedRoles : ['giaovien'];
+
       const body = {
         username: form.username.value,
         fullName: form.fullName.value,
         password: form.password.value ? form.password.value : undefined,
-        role: form.role.value,
+        roles: roles,
+        role: roles[0],
         departmentId: form.departmentId.value,
         email: form.email.value,
         phone: form.phone.value,
@@ -662,11 +666,15 @@
     async function handleUserSubmit(e) {
       e.preventDefault();
       const form = e.target;
+      const checkedRoles = Array.from(form.querySelectorAll('input[name="roles"]:checked')).map(cb => cb.value);
+      const roles = checkedRoles.length > 0 ? checkedRoles : ['giaovien'];
+
       const body = {
         username: form.username.value,
         password: form.password.value,
         fullName: form.fullName.value,
-        role: form.role.value,
+        roles: roles,
+        role: roles[0],
         departmentId: form.departmentId.value,
         email: form.email.value,
         driveFolderUrl: form.driveFolderUrl ? form.driveFolderUrl.value : ''
@@ -1568,6 +1576,21 @@
                   <label class="block text-xs font-bold text-slate-700 mb-1">Tiêu đề hồ sơ / Giáo án (*)</label>
                   <input type="text" name="title" required placeholder="Kế hoạch giảng dạy Môn Toán Tuần 1" class="w-full text-sm px-3 py-2 rounded-xl border border-slate-300" />
                 </div>
+
+                <div class="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <div>
+                    <label class="block text-xs font-bold text-blue-800 mb-1">📁 Mục hồ sơ xếp vào (*)</label>
+                    <select name="targetCategoryId" class="w-full text-xs px-2.5 py-1.5 rounded-lg border border-blue-300 font-bold bg-white text-slate-800">
+                      ${state.categories.map(c => `<option value="${c.id}" ${c.id === state.activeCategory ? 'selected' : ''}>${c.name}</option>`).join('')}
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-blue-800 mb-1">🏫 Tổ chuyên môn xếp vào</label>
+                    <select name="targetDepartmentId" class="w-full text-xs px-2.5 py-1.5 rounded-lg border border-blue-300 font-bold bg-white text-slate-800">
+                      ${state.departments.map(d => `<option value="${d.id}" ${d.id === (state.activeCategory === 'personal' ? state.activeSubDepartment : (state.currentUser.departmentId || 'to1')) ? 'selected' : ''}>${d.name}</option>`).join('')}
+                    </select>
+                  </div>
+                </div>
                 
                 <div>
                   <label class="block text-xs font-bold text-slate-700 mb-1">Năm học (*)</label>
@@ -1779,22 +1802,44 @@
                   <label class="block text-xs font-bold text-slate-700 mb-1">Họ và tên Giáo viên (*)</label>
                   <input type="text" name="fullName" required class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300" />
                 </div>
-                <div class="grid grid-cols-2 gap-3">
-                  <div>
-                    <label class="block text-xs font-bold text-slate-700 mb-1">Vai trò (Role)</label>
-                    <select name="role" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300">
-                      <option value="giaovien">Giáo viên</option>
-                      <option value="totruong">Tổ trưởng</option>
-                      <option value="bgh">Ban Giám Hiệu</option>
-                      <option value="admin">Admin</option>
-                    </select>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Vai trò & Kiêm nhiệm (* Có thể chọn nhiều)</label>
+                  <div class="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" name="roles" value="giaovien" class="rounded text-blue-600 focus:ring-blue-500" checked />
+                      <span>Giáo viên</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" name="roles" value="totruong" class="rounded text-blue-600 focus:ring-blue-500" />
+                      <span>Tổ trưởng Chuyên môn</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" name="roles" value="topho" class="rounded text-blue-600 focus:ring-blue-500" />
+                      <span>Tổ phó Chuyên môn</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" name="roles" value="tongphutrach" class="rounded text-blue-600 focus:ring-blue-500" />
+                      <span>Tổng phụ trách Đội</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" name="roles" value="doan" class="rounded text-blue-600 focus:ring-blue-500" />
+                      <span>Bí thư / Cán bộ Đoàn</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" name="roles" value="bgh" class="rounded text-blue-600 focus:ring-blue-500" />
+                      <span>Ban Giám Hiệu</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" name="roles" value="admin" class="rounded text-blue-600 focus:ring-blue-500" />
+                      <span>Quản trị viên (Admin)</span>
+                    </label>
                   </div>
-                  <div>
-                    <label class="block text-xs font-bold text-slate-700 mb-1">Tổ chuyên môn</label>
-                    <select name="departmentId" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300">
-                      ${state.departments.map(d => `<option value="${d.id}">${d.name}</option>`).join('')}
-                    </select>
-                  </div>
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Tổ chuyên môn</label>
+                  <select name="departmentId" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300">
+                    ${state.departments.map(d => `<option value="${d.id}">${d.name}</option>`).join('')}
+                  </select>
                 </div>
                 <div>
                   <label class="block text-xs font-bold text-slate-700 mb-1">Email</label>
@@ -1960,23 +2005,45 @@
                   <input type="password" name="password" placeholder="Nhập mật khẩu mới..." class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300" />
                 </div>
 
-                <div class="grid grid-cols-2 gap-3">
-                  <div>
-                    <label class="block text-xs font-bold text-slate-700 mb-1">Vai trò (Role)</label>
-                    <select name="role" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300">
-                      <option value="giaovien" ${u.role === 'giaovien' ? 'selected' : ''}>Giáo viên</option>
-                      <option value="totruong" ${u.role === 'totruong' ? 'selected' : ''}>Tổ trưởng</option>
-                      <option value="bgh" ${u.role === 'bgh' ? 'selected' : ''}>Ban Giám Hiệu</option>
-                      <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
-                    </select>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Vai trò & Kiêm nhiệm (* Có thể chọn nhiều)</label>
+                  <div class="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" name="roles" value="giaovien" class="rounded text-blue-600 focus:ring-blue-500" ${userHasRole(u, 'giaovien') ? 'checked' : ''} />
+                      <span>Giáo viên</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" name="roles" value="totruong" class="rounded text-blue-600 focus:ring-blue-500" ${userHasRole(u, 'totruong') ? 'checked' : ''} />
+                      <span>Tổ trưởng Chuyên môn</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" name="roles" value="topho" class="rounded text-blue-600 focus:ring-blue-500" ${userHasRole(u, 'topho') ? 'checked' : ''} />
+                      <span>Tổ phó Chuyên môn</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" name="roles" value="tongphutrach" class="rounded text-blue-600 focus:ring-blue-500" ${userHasRole(u, 'tongphutrach') ? 'checked' : ''} />
+                      <span>Tổng phụ trách Đội</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" name="roles" value="doan" class="rounded text-blue-600 focus:ring-blue-500" ${userHasRole(u, 'doan') ? 'checked' : ''} />
+                      <span>Bí thư / Cán bộ Đoàn</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" name="roles" value="bgh" class="rounded text-blue-600 focus:ring-blue-500" ${userHasRole(u, 'bgh') ? 'checked' : ''} />
+                      <span>Ban Giám Hiệu</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" name="roles" value="admin" class="rounded text-blue-600 focus:ring-blue-500" ${userHasRole(u, 'admin') ? 'checked' : ''} />
+                      <span>Quản trị viên (Admin)</span>
+                    </label>
                   </div>
+                </div>
 
-                  <div>
-                    <label class="block text-xs font-bold text-slate-700 mb-1">Tổ chuyên môn</label>
-                    <select name="departmentId" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300">
-                      ${state.departments.map(d => `<option value="${d.id}" ${u.departmentId === d.id ? 'selected' : ''}>${d.name}</option>`).join('')}
-                    </select>
-                  </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">Tổ chuyên môn</label>
+                  <select name="departmentId" class="w-full text-xs px-3 py-2 rounded-xl border border-slate-300">
+                    ${state.departments.map(d => `<option value="${d.id}" ${u.departmentId === d.id ? 'selected' : ''}>${d.name}</option>`).join('')}
+                  </select>
                 </div>
 
                 <div class="grid grid-cols-2 gap-3">

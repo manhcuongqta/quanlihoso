@@ -319,9 +319,18 @@ function loadDB() {
     }
     const raw = fs.readFileSync(DB_FILE, 'utf8');
     const data = JSON.parse(raw);
+    let dirty = false;
     if (!data.schoolYears || JSON.stringify(data.schoolYears) !== JSON.stringify(['2026-2027'])) {
       data.schoolYears = ['2026-2027'];
       dirty = true;
+    }
+    if (data.users) {
+      data.users.forEach(u => {
+        if (!u.roles || !Array.isArray(u.roles) || u.roles.length === 0) {
+          u.roles = u.role ? [u.role] : ['giaovien'];
+          dirty = true;
+        }
+      });
     }
     if (data.documents) {
       data.documents.forEach(d => {
